@@ -24,6 +24,36 @@ SERVICE_PATTERNS = [
 ]
 
 
+def _iter_sls_logs(result: Any) -> list[Any]:
+    if hasattr(result, "get_logs"):
+        return list(result.get_logs())
+    if isinstance(result, dict):
+        logs = result.get("logs") or result.get("data") or []
+        return list(logs) if isinstance(logs, list) else []
+    return []
+
+
+def _log_contents(log: Any) -> Any:
+    if hasattr(log, "get_contents"):
+        return log.get_contents()
+    if isinstance(log, dict):
+        return log.get("contents") or log.get("content") or log
+    return str(log)
+
+
+def _log_time(log: Any) -> Any:
+    if hasattr(log, "get_time"):
+        return log.get_time()
+    if isinstance(log, dict):
+        return log.get("time") or log.get("__time__") or log.get("timestamp")
+    return None
+
+
+def _extract_message(contents: dict[str, Any]) -> str:
+    message = contents.get("message") or contents.get("msg") or contents.get("content") or ""
+    return str(message)
+
+
 class AliyunSLSClient:
     """阿里云 SLS 日志服务客户端
 
@@ -87,6 +117,7 @@ class AliyunSLSClient:
         Returns:
             日志列表，每条包含 timestamp 和 content
         """
+        from aliyun.log import GetLogsRequest
         from aliyun.log.logclient import LogException
 
         client = self._get_client()
@@ -100,25 +131,27 @@ class AliyunSLSClient:
         try:
             async with asyncio.timeout(self._timeout_seconds):
                 loop = asyncio.get_event_loop()
+                request = GetLogsRequest(
+                    project=self._project,
+                    logstore=self._logstore,
+                    fromTime=from_time,
+                    toTime=to_time,
+                    topic="",
+                    query=query,
+                    line=max_lines,
+                    offset=0,
+                    reverse=False,
+                )
                 result = await loop.run_in_executor(
                     None,
-                    lambda: client.get_log_lines(
-                        self._project,
-                        self._logstore,
-                        topic="",
-                        from_time=from_time,
-                        to_time=to_time,
-                        query=query,
-                        max_line_num=max_lines,
-                    ),
+                    lambda: client.get_logs(request),
                 )
 
                 logs = []
-                for log in result.get_log_lines():
-                    # 解析日志内容
-                    contents = log.get_contents()
+                for log in _iter_sls_logs(result):
+                    contents = _log_contents(log)
                     log_entry = {
-                        "timestamp": log.get_time(),
+                        "timestamp": _log_time(log),
                         "content": contents,
                     }
 
@@ -126,7 +159,7 @@ class AliyunSLSClient:
                     if isinstance(contents, dict):
                         log_entry["level"] = contents.get("level", contents.get("severity", ""))
                         log_entry["service"] = contents.get("service", contents.get("app", ""))
-                        log_entry["message"] = contents.get("message", contents.get("msg", ""))
+                        log_entry["message"] = _extract_message(contents)
                         log_entry["trace_id"] = contents.get("trace_id", contents.get("traceId", ""))
                         log_entry["span_id"] = contents.get("span_id", contents.get("spanId", ""))
                     else:
@@ -161,12 +194,15 @@ class SLSLogsProvider:
         """
         logger.info("Querying SLS logs summary_chars=%s group_id=%s", len(alert_summary), group_id)
 
-        # 构建查询语句
-        query = self._build_query(alert_summary)
-        logger.info("SLS query: %s", query)
-
-        # 查询日志（重试已在 AliyunSLSClient.query_logs 中处理）
-        logs = await self._client.query_logs(query=query)
+        queries = self._build_queries(alert_summary)
+        logs: list[dict[str, Any]] = []
+        query = queries[0]
+        for candidate in queries:
+            logger.info("SLS query: %s", candidate)
+            logs = await self._client.query_logs(query=candidate)
+            query = candidate
+            if logs:
+                break
 
         monitor.record_tool_call("query_logs", group_id)
 
@@ -200,6 +236,25 @@ class SLSLogsProvider:
             "query": query,
             "provider": "aliyun_sls",
         }
+
+    def _build_queries(self, alert_summary: str) -> list[str]:
+        queries = []
+        raw_query = self._build_raw_query(alert_summary)
+        if raw_query:
+            queries.append(raw_query)
+
+        fuzzy_query = self._build_query(alert_summary)
+        if fuzzy_query not in queries:
+            queries.append(fuzzy_query)
+
+        return queries or ["*"]
+
+    def _build_raw_query(self, alert_summary: str) -> str | None:
+        text = alert_summary.strip()
+        if not text:
+            return None
+        escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
 
     def _build_query(self, alert_summary: str) -> str:
         """根据告警摘要构建 SLS 查询语句

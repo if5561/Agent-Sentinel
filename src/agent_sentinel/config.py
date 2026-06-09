@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
@@ -30,11 +31,38 @@ def _to_list(value: str | None) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _to_args(value: str | None) -> list[str]:
+    if value is None or value.strip() == "":
+        return []
+    if "," in value:
+        return _to_list(value)
+    return shlex.split(value)
+
+
 def _first_non_empty(*values: str | None) -> str | None:
     for value in values:
         if value is not None and value != "":
             return value
     return None
+
+
+@dataclass(slots=True)
+class LangfuseConfig:
+    enabled: bool = False
+    host: str | None = None
+    public_key: str | None = None
+    secret_key: str | None = None
+    cache_ttl_seconds: int = 300
+    label: str = "production"
+    link_initial_delay_ms: int = 2000
+    link_poll_interval_ms: int = 2000
+    link_max_retries: int = 10
+    link_generations: bool = False
+    remote_prompts_enabled: bool = True
+    prompt_dir: str = "config/prompts"
+    trace_prompts: bool = True
+    trace_rag: bool = True
+    trace_tools: bool = True
 
 
 @dataclass(slots=True)
@@ -119,10 +147,17 @@ class Settings:
     interactive_topic_wait_seconds: int = 5
 
     # Tools provider 配置
-    tools_provider: str = "mock"  # mock | aliyun
+    tools_provider: str = "mock"  # mock | aliyun | mcp
     tools_metrics_enabled: bool = True
     tools_logs_enabled: bool = True
     tools_topology_enabled: bool = True
+    mcp_enabled: bool = False
+    mcp_server_command: str = ""
+    mcp_server_args: list[str] = field(default_factory=list)
+    mcp_timeout_seconds: int = 20
+    mcp_sls_tool: str = "aliyun_sls_query_logs"
+    mcp_prometheus_tool: str = "prometheus_query_metrics"
+    mcp_prometheus_base_url: str | None = None
 
     # 阿里云 SLS 配置
     aliyun_sls_access_key_id: str | None = None
@@ -139,6 +174,7 @@ class Settings:
     aliyun_arms_region_id: str = "cn-hangzhou"
     aliyun_arms_app_id: str = ""
     aliyun_arms_query_timeout_seconds: int = 10
+    langfuse: LangfuseConfig = field(default_factory=LangfuseConfig)
 
 
 def get_settings() -> Settings:
@@ -157,8 +193,10 @@ def get_settings() -> Settings:
     )
     embedding_cfg = yaml_settings.get("embedding", {})
     tools_cfg = yaml_settings.get("tools", {}) if isinstance(yaml_settings.get("tools", {}), dict) else {}
+    mcp_cfg = tools_cfg.get("mcp", {}) if isinstance(tools_cfg.get("mcp", {}), dict) else {}
     sls_cfg = tools_cfg.get("aliyun_sls", {}) if isinstance(tools_cfg.get("aliyun_sls", {}), dict) else {}
     arms_cfg = tools_cfg.get("aliyun_arms", {}) if isinstance(tools_cfg.get("aliyun_arms", {}), dict) else {}
+    langfuse_cfg = yaml_settings.get("langfuse", {}) if isinstance(yaml_settings.get("langfuse", {}), dict) else {}
     return Settings(
         app_name=os.getenv("APP_NAME", str(app_cfg.get("name", "Agent Sentinel"))),
         app_host=os.getenv("APP_HOST", str(app_cfg.get("host", "0.0.0.0"))),
@@ -324,6 +362,20 @@ def get_settings() -> Settings:
             bool(tools_cfg.get("topology_enabled", True)),
         ),
         # 阿里云 SLS 配置
+        mcp_enabled=_to_bool(os.getenv("MCP_ENABLED"), bool(mcp_cfg.get("enabled", False))),
+        mcp_server_command=os.getenv("MCP_SERVER_COMMAND", str(mcp_cfg.get("server_command", ""))),
+        mcp_server_args=_to_args(os.getenv("MCP_SERVER_ARGS"))
+        or [str(item) for item in mcp_cfg.get("server_args", [])],
+        mcp_timeout_seconds=_to_int(os.getenv("MCP_TIMEOUT_SECONDS"), int(mcp_cfg.get("timeout_seconds", 20))),
+        mcp_sls_tool=os.getenv("MCP_SLS_TOOL", str(mcp_cfg.get("sls_tool", "aliyun_sls_query_logs"))),
+        mcp_prometheus_tool=os.getenv(
+            "MCP_PROMETHEUS_TOOL",
+            str(mcp_cfg.get("prometheus_tool", "prometheus_query_metrics")),
+        ),
+        mcp_prometheus_base_url=_first_non_empty(
+            os.getenv("MCP_PROMETHEUS_BASE_URL"),
+            str(mcp_cfg.get("prometheus_base_url", "")) or None,
+        ),
         aliyun_sls_access_key_id=os.getenv("ALIYUN_SLS_ACCESS_KEY_ID", sls_cfg.get("access_key_id")),
         aliyun_sls_access_key_secret=os.getenv("ALIYUN_SLS_ACCESS_KEY_SECRET", sls_cfg.get("access_key_secret")),
         aliyun_sls_endpoint=os.getenv(
@@ -351,6 +403,48 @@ def get_settings() -> Settings:
         aliyun_arms_query_timeout_seconds=_to_int(
             os.getenv("ALIYUN_ARMS_QUERY_TIMEOUT_SECONDS"),
             int(arms_cfg.get("query_timeout_seconds", 10)),
+        ),
+        langfuse=LangfuseConfig(
+            enabled=_to_bool(os.getenv("LANGFUSE_ENABLED"), bool(langfuse_cfg.get("enabled", False))),
+            host=_first_non_empty(
+                os.getenv("LANGFUSE_HOST"),
+                os.getenv("LANGFUSE_BASE_URL"),
+                str(langfuse_cfg.get("host", "")) or None,
+            ),
+            public_key=_first_non_empty(os.getenv("LANGFUSE_PUBLIC_KEY"), langfuse_cfg.get("public_key")),
+            secret_key=_first_non_empty(os.getenv("LANGFUSE_SECRET_KEY"), langfuse_cfg.get("secret_key")),
+            cache_ttl_seconds=_to_int(
+                os.getenv("LANGFUSE_CACHE_TTL_SECONDS"),
+                int(langfuse_cfg.get("cache_ttl_seconds", 300)),
+            ),
+            label=os.getenv("LANGFUSE_LABEL", str(langfuse_cfg.get("label", "production"))),
+            link_initial_delay_ms=_to_int(
+                os.getenv("LANGFUSE_LINK_INITIAL_DELAY_MS"),
+                int(langfuse_cfg.get("link_initial_delay_ms", 2000)),
+            ),
+            link_poll_interval_ms=_to_int(
+                os.getenv("LANGFUSE_LINK_POLL_INTERVAL_MS"),
+                int(langfuse_cfg.get("link_poll_interval_ms", 2000)),
+            ),
+            link_max_retries=_to_int(
+                os.getenv("LANGFUSE_LINK_MAX_RETRIES"),
+                int(langfuse_cfg.get("link_max_retries", 10)),
+            ),
+            link_generations=_to_bool(
+                os.getenv("LANGFUSE_LINK_GENERATIONS"),
+                bool(langfuse_cfg.get("link_generations", False)),
+            ),
+            remote_prompts_enabled=_to_bool(
+                os.getenv("LANGFUSE_REMOTE_PROMPTS_ENABLED"),
+                bool(langfuse_cfg.get("remote_prompts_enabled", True)),
+            ),
+            prompt_dir=os.getenv("LANGFUSE_PROMPT_DIR", str(langfuse_cfg.get("prompt_dir", "config/prompts"))),
+            trace_prompts=_to_bool(
+                os.getenv("LANGFUSE_TRACE_PROMPTS"),
+                bool(langfuse_cfg.get("trace_prompts", True)),
+            ),
+            trace_rag=_to_bool(os.getenv("LANGFUSE_TRACE_RAG"), bool(langfuse_cfg.get("trace_rag", True))),
+            trace_tools=_to_bool(os.getenv("LANGFUSE_TRACE_TOOLS"), bool(langfuse_cfg.get("trace_tools", True))),
         ),
     )
 

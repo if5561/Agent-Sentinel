@@ -33,10 +33,21 @@ class TopicTaskStore:
     def __init__(self, wait_seconds: int) -> None:
         self.wait_seconds = wait_seconds
         self._tasks: dict[str, TopicTask] = {}
+        self._source_index: dict[tuple[str, str], str] = {}
         self._lock = threading.RLock()
 
     def create_task(self, task_id: str, chat_id: str, root_message_id: str, query: str) -> TopicTask:
         with self._lock:
+            source_key = self._source_key(chat_id, root_message_id)
+            existing_task = self._task_by_source_key_locked(source_key)
+            if existing_task is not None:
+                logger.info(
+                    "Interactive topic task reused source duplicate task_id=%s chat_id=%s root_message_id=%s",
+                    existing_task.task_id,
+                    chat_id,
+                    root_message_id,
+                )
+                return replace(existing_task, timeout_timer=None)
             task = TopicTask(
                 task_id=task_id,
                 chat_id=chat_id,
@@ -45,6 +56,7 @@ class TopicTaskStore:
                 created_at_monotonic=time.perf_counter(),
             )
             self._tasks[task_id] = task
+            self._source_index[source_key] = task_id
             logger.info("Interactive topic task created task_id=%s chat_id=%s", task_id, chat_id)
             return replace(task, timeout_timer=None)
 
@@ -187,12 +199,33 @@ class TopicTaskStore:
                 return None
             return replace(task, timeout_timer=None)
 
+    def get_task_by_source(self, chat_id: str, root_message_id: str) -> TopicTask | None:
+        with self._lock:
+            task = self._task_by_source_key_locked(self._source_key(chat_id, root_message_id))
+            if task is None:
+                return None
+            return replace(task, timeout_timer=None)
+
     def finish_task(self, task_id: str) -> None:
         with self._lock:
             task = self._tasks.pop(task_id, None)
             if task is not None:
+                self._source_index.pop(self._source_key(task.chat_id, task.root_message_id), None)
                 self._cancel_timer_locked(task)
                 logger.info("Interactive topic task finished task_id=%s", task_id)
+
+    def _task_by_source_key_locked(self, source_key: tuple[str, str]) -> TopicTask | None:
+        task_id = self._source_index.get(source_key)
+        if not task_id:
+            return None
+        task = self._tasks.get(task_id)
+        if task is None:
+            self._source_index.pop(source_key, None)
+            return None
+        return task
+
+    def _source_key(self, chat_id: str, root_message_id: str) -> tuple[str, str]:
+        return (str(chat_id or "").strip(), str(root_message_id or "").strip())
 
     def _cancel_timer_locked(self, task: TopicTask) -> None:
         timer = task.timeout_timer

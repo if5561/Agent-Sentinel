@@ -4,12 +4,17 @@ import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from agent_sentinel.llm.client import build_chat_model
 from agent_sentinel.monitoring import monitor
+from agent_sentinel.observability.langfuse import (
+    NullLangfusePromptService,
+    reset_trace_context,
+    set_trace_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +29,18 @@ class LLMExecutor:
     timeout_seconds: float = 15.0
     max_retries: int = 2
     mock_enabled: bool = False
+    langfuse: object = field(default_factory=NullLangfusePromptService)
 
-    async def call(self, prompt: str, **kwargs: object) -> str:
+    async def call(
+        self,
+        prompt: str,
+        *,
+        prompt_name: str | None = None,
+        prompt_variables: dict[str, object] | None = None,
+        prompt_label: str | None = None,
+        metadata: dict[str, object] | None = None,
+        **kwargs: object,
+    ) -> str:
         if self.mock_enabled or not self.api_key:
             logger.info("LLM mock call started prompt_chars=%s", len(prompt))
             started = time.perf_counter()
@@ -49,7 +64,14 @@ class LLMExecutor:
         last_exc: Exception | None = None
         for model in self.models:
             try:
-                return await self._call_with_retries(model, prompt)
+                return await self._call_with_retries(
+                    model,
+                    prompt,
+                    prompt_name=prompt_name,
+                    prompt_variables=prompt_variables,
+                    prompt_label=prompt_label,
+                    metadata=metadata,
+                )
             except Exception as exc:  # pragma: no cover - depends on remote LLM
                 last_exc = exc
                 monitor.record_error("llm_timeout" if isinstance(exc, TimeoutError) else "llm_error")
@@ -57,7 +79,16 @@ class LLMExecutor:
 
         raise RuntimeError("All LLM models failed.") from last_exc
 
-    async def _call_with_retries(self, model_name: str, prompt: str) -> str:
+    async def _call_with_retries(
+        self,
+        model_name: str,
+        prompt: str,
+        *,
+        prompt_name: str | None = None,
+        prompt_variables: dict[str, object] | None = None,
+        prompt_label: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> str:
         async for attempt in AsyncRetrying(
             stop=stop_after_attempt(self.max_retries),
             wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
@@ -74,7 +105,15 @@ class LLMExecutor:
                         temperature=self.temperature,
                         trust_env=self.trust_env,
                     )
-                    response = await model.ainvoke(prompt)
+                    response = await self.langfuse.call_llm_with_trace(  # type: ignore[attr-defined]
+                        llm=model,
+                        fallback_prompt=prompt,
+                        prompt_name=prompt_name,
+                        variables=prompt_variables,
+                        prompt_label=prompt_label,
+                        model_name=model_name,
+                        metadata=metadata,
+                    )
                 elapsed_ms = int((time.perf_counter() - started) * 1000)
                 content = str(getattr(response, "content", response))
                 prompt_tokens, completion_tokens = _extract_token_usage(response)
@@ -102,6 +141,18 @@ class LLMExecutor:
                 return content
 
         raise RuntimeError("LLM retry loop exited unexpectedly.")
+
+    def set_trace_context(self, **values: object) -> object:
+        return set_trace_context(**values)
+
+    def reset_trace_context(self, token: object) -> None:
+        reset_trace_context(token)  # type: ignore[arg-type]
+
+    def callbacks(self) -> list[object]:
+        return self.langfuse.callbacks()  # type: ignore[attr-defined]
+
+    async def flush_observability(self) -> None:
+        await self.langfuse.flush()  # type: ignore[attr-defined]
 
     def _mock_response(self, prompt: str, **_: object) -> str:
         lower = prompt.lower()

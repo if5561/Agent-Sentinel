@@ -7,6 +7,7 @@ from typing import Any
 
 from langgraph.types import interrupt
 
+from agent_sentinel.agents.timeouts import llm_timeout_seconds
 from agent_sentinel.feishu.card_handler import DecisionContext, HumanDecisionStore
 from agent_sentinel.feishu.sender import FeishuSender
 from agent_sentinel.graph.state import DiagnosisState, append_evidence, append_message
@@ -31,9 +32,16 @@ async def understand_node(
     cache_enabled: bool = True,
 ) -> DiagnosisState:
     logger.info("Node understand started")
-    prompt = format_prompt("understand", {"raw_alert": state.get("raw_alert", {})})
-    async with asyncio.timeout(10):
-        summary = await llm.call(prompt)
+    prompt_variables = {"raw_alert": state.get("raw_alert", {})}
+    prompt = format_prompt("understand", prompt_variables)
+    async with asyncio.timeout(llm_timeout_seconds(llm)):
+        summary = await _call_llm(
+            llm,
+            prompt,
+            prompt_name="understand",
+            prompt_variables=prompt_variables,
+            metadata={"node_name": "understand", "trace_id": trace_id_from_state(state)},
+        )
     logger.info("Node understand completed summary_chars=%s", len(summary))
     logger.info(
         "Understand node alert summary trace_id=%s chat_id=%s workflow_thread_id=%s summary_chars=%s summary=%s",
@@ -194,3 +202,12 @@ def _truncate_log_text(text: str, limit: int = 1000) -> str:
     if len(text) <= limit:
         return text
     return f"{text[:limit]}..."
+
+
+async def _call_llm(llm: LLMExecutor, prompt: str, **kwargs: object) -> str:
+    try:
+        return await llm.call(prompt, **kwargs)
+    except TypeError as exc:
+        if "unexpected keyword" not in str(exc):
+            raise
+        return await llm.call(prompt)  # type: ignore[call-arg]

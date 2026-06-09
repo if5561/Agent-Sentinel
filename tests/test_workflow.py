@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from langgraph.types import Command
 
 from agent_sentinel.config import Settings
+from agent_sentinel.agents.generate_plan import PlanOutput
 from agent_sentinel.feishu.card_handler import HumanDecisionStore
 from agent_sentinel.feishu.sender import FeishuSender
 from agent_sentinel.graph.workflow import DiagnosisWorkflow, build_llm_executor
@@ -205,3 +206,15 @@ def test_langgraph_workflow_rejected_feedback_returns_to_generate_plan() -> None
         assert sender.send_card.await_count >= 1
 
     asyncio.run(run())
+
+
+def test_plan_output_accepts_action_list_from_llm() -> None:
+    parsed = PlanOutput.model_validate(
+        {
+            "recommended_plan": [{"action": "check downstream timeout"}],
+            "evidence": ["payment-api timeout"],
+            "need_human": True,
+        }
+    )
+
+    assert parsed.recommended_plan == {"actions": [{"action": "check downstream timeout"}]}

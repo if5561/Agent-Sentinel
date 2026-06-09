@@ -13,6 +13,7 @@ tenacity>=8.5.0
 redis>=5.2.0
 requests>=2.32.0
 aiohttp>=3.10.0
+cachetools>=5.5.0
 lark-oapi>=1.4.18
 prometheus-client>=0.21.0
 httpx>=0.28.0

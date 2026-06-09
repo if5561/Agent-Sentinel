@@ -1,3 +1,20 @@
+langfuse:
+  enabled: false
+  host: ""
+  public_key: ""
+  secret_key: ""
+  cache_ttl_seconds: 300
+  label: production
+  link_initial_delay_ms: 2000
+  link_poll_interval_ms: 2000
+  link_max_retries: 10
+  link_generations: false
+  remote_prompts_enabled: true
+  prompt_dir: config/prompts
+  trace_prompts: true
+  trace_rag: true
+  trace_tools: true
+
 app:
   name: Agent Sentinel
   host: 0.0.0.0
@@ -20,10 +37,21 @@ workflow:
   human_confirm_enabled: true
 
 tools:
-  provider: mock  # mock | aliyun
+  provider: mock  # mock | aliyun | mcp
   metrics_enabled: true
   logs_enabled: true
   topology_enabled: true
+
+  mcp:
+    enabled: false
+    server_command: python
+    server_args:
+      - -m
+      - agent_sentinel_mcp_server
+    timeout_seconds: 20
+    sls_tool: aliyun_sls_query_logs
+    prometheus_tool: prometheus_query_metrics
+    prometheus_base_url: http://127.0.0.1:9090
 
   # 阿里云 SLS 日志服务配置
   aliyun_sls:
@@ -68,5 +96,5 @@ rag:
 
 embedding:
   model: text-embedding-3-small
-  dimension: 1536
+  dimension: 1024
   mock_enabled: false

@@ -36,13 +36,11 @@ from agent_sentinel.schemas import (
     HealthResponse,
 )
 from agent_sentinel.service import SingleTurnChatService
+from agent_sentinel.utils.logger import configure_logger
 
 
 def configure_logging(log_level: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper(), logging.INFO),
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
+    configure_logger(log_level)
 
 
 def build_app(settings: Settings | None = None) -> FastAPI:
@@ -366,6 +364,21 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             )
         poller_bot.start()
         logger.info("Application startup completed")
+
+    @app.on_event("shutdown")
+    async def shutdown_event() -> None:
+        logger.info("Application shutdown begin")
+        observability_clients: list[LLMExecutor] = []
+        if aiops_workflow is not None:
+            observability_clients.append(aiops_workflow.llm)
+        if interactive_topic_workflow is not None and interactive_topic_workflow.llm is not None:
+            observability_clients.append(interactive_topic_workflow.llm)
+        for llm in observability_clients:
+            try:
+                await llm.flush_observability()
+            except Exception:
+                logger.warning("Failed to flush observability client", exc_info=True)
+        logger.info("Application shutdown completed")
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:

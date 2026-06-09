@@ -8,6 +8,8 @@ __pycache__
 *.pyd
 .env
 *.log
+litellm
+.pytest_cache
 dist
 build
 *.egg-info

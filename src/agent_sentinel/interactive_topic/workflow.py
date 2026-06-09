@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import json
 import logging
 import threading
 import time
@@ -24,15 +25,30 @@ from agent_sentinel.interactive_topic.task_store import TopicTaskStore
 from agent_sentinel.interactive_topic.topic_sender import InteractiveTopicSender, WORKFLOW_STEPS
 from agent_sentinel.llm.executor import LLMExecutor
 from agent_sentinel.monitoring import monitor, trace_id_from_parts
+from agent_sentinel.observability.langfuse import current_trace_context
 from agent_sentinel.rag.base import BaseRetriever
 from agent_sentinel.rag.history_cases import HistoryCaseStore
 
 logger = logging.getLogger(__name__)
+node_event_json_logger = logging.getLogger("agent_sentinel.node_event_json")
 
 NodeRunResult = str | tuple[str, DiagnosisState]
 NodeRunner = Callable[[TopicFlowState], Awaitable[NodeRunResult]]
 MAX_NODE_RETRIES = 2
 RAG_DISPLAY_TOP_K = 2
+MAX_ROUTED_TOOL_CALLS = 3
+_tools_provider: Any | None = None
+
+
+def _get_tools_provider() -> Any:
+    global _tools_provider
+    if _tools_provider is None:
+        from agent_sentinel.config import get_settings
+        from agent_sentinel.tools.factory import build_tools_provider
+
+        _tools_provider = build_tools_provider(get_settings())
+        logger.info("Interactive ReAct tools provider initialized provider=%s", type(_tools_provider).__name__)
+    return _tools_provider
 
 
 class InteractiveTopicWorkflow:
@@ -71,7 +87,9 @@ class InteractiveTopicWorkflow:
         builder.add_node("understand", partial(self._interactive_node, "understand", self._understand))
         builder.add_node("cache_check", partial(self._interactive_node, "cache_check", self._cache_check))
         builder.add_node("rag_retrieve", partial(self._interactive_node, "rag_retrieve", self._rag_retrieve))
-        builder.add_node("tool_call", partial(self._interactive_node, "tool_call", self._tool_call))
+        builder.add_node("tool_router", partial(self._interactive_node, "tool_router", self._tool_router))
+        builder.add_node("tool_executor", partial(self._interactive_node, "tool_executor", self._tool_executor))
+        builder.add_node("evidence_review", partial(self._interactive_node, "evidence_review", self._evidence_review))
         builder.add_node("generate_plan", partial(self._interactive_node, "generate_plan", self._generate_plan))
         builder.add_node("validate", partial(self._interactive_node, "validate", self._validate))
         builder.add_node("summary", partial(self._interactive_node, "summary", self._summary))
@@ -90,12 +108,22 @@ class InteractiveTopicWorkflow:
         builder.add_conditional_edges(
             "rag_retrieve",
             self._route_after_confirm,
-            {"retry": "rag_retrieve", "next": "tool_call"},
+            {"retry": "rag_retrieve", "next": "tool_router"},
         )
         builder.add_conditional_edges(
-            "tool_call",
+            "tool_router",
             self._route_after_confirm,
-            {"retry": "tool_call", "next": "generate_plan"},
+            {"retry": "tool_router", "next": "tool_executor"},
+        )
+        builder.add_conditional_edges(
+            "tool_executor",
+            self._route_after_confirm,
+            {"retry": "tool_executor", "next": "evidence_review"},
+        )
+        builder.add_conditional_edges(
+            "evidence_review",
+            self._route_after_confirm,
+            {"retry": "evidence_review", "next": "generate_plan"},
         )
         builder.add_conditional_edges(
             "generate_plan",
@@ -135,6 +163,17 @@ class InteractiveTopicWorkflow:
 
     async def _start_impl(self, chat_id: str, root_message_id: str, query: str) -> str:
         started = time.perf_counter()
+        existing_task = self.task_store.get_task_by_source(chat_id, root_message_id)
+        if existing_task is not None:
+            logger.info(
+                "Interactive topic duplicate start ignored trace_id=%s existing_task_id=%s chat_id=%s root_message_id=%s query_chars=%s",
+                trace_id_from_parts(chat_id, root_message_id),
+                existing_task.task_id,
+                chat_id,
+                root_message_id,
+                len(query or ""),
+            )
+            return existing_task.task_id
         task_id = f"topic-{uuid.uuid4()}"
         logger.info(
             "Interactive topic start trace_id=%s task_id=%s chat_id=%s root_message_id=%s query_chars=%s wait_seconds=%s",
@@ -145,7 +184,16 @@ class InteractiveTopicWorkflow:
             len(query or ""),
             self.wait_seconds,
         )
-        self.task_store.create_task(task_id, chat_id, root_message_id, query)
+        task = self.task_store.create_task(task_id, chat_id, root_message_id, query)
+        if task.task_id != task_id:
+            logger.info(
+                "Interactive topic task already exists after create task_id=%s requested_task_id=%s chat_id=%s root_message_id=%s",
+                task.task_id,
+                task_id,
+                chat_id,
+                root_message_id,
+            )
+            return task.task_id
         if monitor.enabled:
             monitor.current_workflow_active.labels(workflow_type="interactive_topic", group_id=chat_id or "unknown").inc()
         card_message_id = await self.sender.send_workflow_card(chat_id, root_message_id, task_id, query)
@@ -240,6 +288,16 @@ class InteractiveTopicWorkflow:
             if action not in {"next", "retry"}:
                 action = "next"
             retry_counts = increment_retry(state, node_name) if action == "retry" else dict(state.get("retry_counts", {}))
+            self._log_node_event(
+                event="confirmation_replay",
+                node_name=node_name,
+                state=state,
+                status="resumed",
+                task=task,
+                action=action,
+                source_state=task.status if task else "",
+                retry_count=retry_counts.get(node_name, 0),
+            )
             logger.info(
                 "Interactive node confirmation replay task_id=%s node=%s action=%s source_state=%s retry_count=%s",
                 task_id,
@@ -261,6 +319,16 @@ class InteractiveTopicWorkflow:
                     buttons_node=None,
                 )
                 logger.info("Interactive node retry limit reached task_id=%s node=%s max_retries=%s", task_id, node_name, MAX_NODE_RETRIES)
+                self._log_node_event(
+                    event="retry_limit",
+                    node_name=node_name,
+                    state=state,
+                    status="skipped",
+                    task=task,
+                    action=action,
+                    max_retries=MAX_NODE_RETRIES,
+                    retry_count=retry_counts.get(node_name, 0),
+                )
             replay_update: TopicFlowState = {
                 "current_node": node_name,
                 "node_result": replay_result,
@@ -281,6 +349,13 @@ class InteractiveTopicWorkflow:
             len(state.get("node_results", [])),
             card_message_id,
         )
+        self._log_node_event(
+            event="start",
+            node_name=node_name,
+            state=state,
+            status="running",
+            task=task,
+        )
 
         await self.sender.update_workflow_card(
             card_message_id,
@@ -298,6 +373,15 @@ class InteractiveTopicWorkflow:
                 node_result, diagnosis_state = self._normalize_node_result(run_result, state)
         except Exception as exc:
             logger.exception("Interactive topic node failed task_id=%s node=%s", task_id, node_name)
+            self._log_node_event(
+                event="failed",
+                node_name=node_name,
+                state=state,
+                status="skipped",
+                task=task,
+                elapsed_ms=int((time.perf_counter() - started) * 1000),
+                error=exc,
+            )
             node_result = f"{_node_title(node_name)} 节点执行失败，已跳过当前节点并继续后续流程：{exc}"
             await self.sender.update_workflow_card(
                 card_message_id,
@@ -323,6 +407,15 @@ class InteractiveTopicWorkflow:
             len(node_result or ""),
             int((time.perf_counter() - started) * 1000),
         )
+        self._log_node_event(
+            event="completed",
+            node_name=node_name,
+            state=state,
+            status="done",
+            task=task,
+            result_chars=len(node_result or ""),
+            elapsed_ms=int((time.perf_counter() - started) * 1000),
+        )
         await self.sender.update_workflow_card(
             card_message_id,
             task_id=task_id,
@@ -347,6 +440,15 @@ class InteractiveTopicWorkflow:
             node_name,
             self.wait_seconds,
         )
+        self._log_node_event(
+            event="waiting",
+            node_name=node_name,
+            state=state,
+            status="waiting",
+            task=task,
+            timeout_seconds=self.wait_seconds,
+            result_chars=len(node_result or ""),
+        )
 
         resume_payload = interrupt(
             {
@@ -368,6 +470,16 @@ class InteractiveTopicWorkflow:
             (resume_payload or {}).get("source"),
             retry_counts.get(node_name, 0),
         )
+        self._log_node_event(
+            event="resumed",
+            node_name=node_name,
+            state=state,
+            status="resumed",
+            task=task,
+            action=action,
+            source=(resume_payload or {}).get("source"),
+            retry_count=retry_counts.get(node_name, 0),
+        )
         if action == "retry" and retry_counts.get(node_name, 0) >= MAX_NODE_RETRIES:
             action = "skip"
             node_result = f"{node_result}\n\n已重试 {MAX_NODE_RETRIES} 次，自动跳过当前节点并进入下一节点。"
@@ -381,6 +493,16 @@ class InteractiveTopicWorkflow:
                 buttons_node=None,
             )
             logger.info("Interactive node retry limit reached task_id=%s node=%s max_retries=%s", task_id, node_name, MAX_NODE_RETRIES)
+            self._log_node_event(
+                event="retry_limit",
+                node_name=node_name,
+                state=state,
+                status="skipped",
+                task=task,
+                action=action,
+                max_retries=MAX_NODE_RETRIES,
+                retry_count=retry_counts.get(node_name, 0),
+            )
         update: TopicFlowState = {
             "current_node": node_name,
             "node_result": node_result,
@@ -390,58 +512,72 @@ class InteractiveTopicWorkflow:
         }
         if action == "next":
             update["diagnosis_state"] = diagnosis_state
+            for state_key in ("tool_plan", "tool_results", "evidence_review"):
+                if state_key in diagnosis_state:
+                    update[state_key] = diagnosis_state[state_key]  # type: ignore[typeddict-item]
         return update
 
     async def _drive(self, task_id: str, graph_input: TopicFlowState | Command) -> None:
         app = self.compile()
-        config = {"configurable": {"thread_id": task_id}, "recursion_limit": 50}
+        trace_id = self._trace_id_for_input(task_id, graph_input)
+        metadata = self._langfuse_metadata(task_id, graph_input)
+        config = {
+            "configurable": {"thread_id": task_id, "trace_id": trace_id, "task_id": task_id},
+            "recursion_limit": 50,
+            "metadata": metadata,
+        }
         lock = await self._get_task_lock(task_id)
         started = time.perf_counter()
         logger.info("Interactive drive start task_id=%s input_type=%s", task_id, type(graph_input).__name__)
-        async with lock:
-            async for update in app.astream(graph_input, config=config, stream_mode="updates"):
-                logger.info("Interactive drive update task_id=%s nodes=%s", task_id, list(update.keys()))
-            snapshot = await app.aget_state(config)
-            next_nodes = tuple(getattr(snapshot, "next", ()) or ())
-            values = getattr(snapshot, "values", {}) or {}
-            logger.info(
-                "Interactive drive snapshot task_id=%s next_nodes=%s node_results=%s elapsed_ms=%s",
-                task_id,
-                next_nodes,
-                len(values.get("node_results", []) or []),
-                int((time.perf_counter() - started) * 1000),
-            )
-            if not next_nodes:
-                task = self.task_store.get_task(task_id)
-                if task is not None:
-                    final_text = self._build_final_text(values)
-                    if monitor.enabled and task.created_at_monotonic:
-                        monitor.workflow_total_duration_seconds.labels(
-                            workflow_type="interactive_topic",
-                            group_id=task.chat_id or "unknown",
-                        ).observe(time.perf_counter() - task.created_at_monotonic)
-                    logger.info(
-                        "Interactive topic final card update task_id=%s final_chars=%s node_results=%s",
-                        task_id,
-                        len(final_text),
-                        len(values.get("node_results", []) or []),
-                    )
-                    await self.sender.update_workflow_card(
-                        task.card_message_id,
-                        task_id=task_id,
-                        query=task.query,
-                        node_statuses={step.node_name: "done" for step in WORKFLOW_STEPS},
-                        current_node=None,
-                        current_result=final_text,
-                        buttons_node=None,
-                        feedback_buttons=True,
-                    )
-                    if monitor.enabled:
-                        monitor.current_workflow_active.labels(
-                            workflow_type="interactive_topic",
-                            group_id=task.chat_id or "unknown",
-                        ).dec()
-                    self.task_store.mark_feedback_waiting(task_id, task.card_message_id)
+        token = self.llm.set_trace_context(**metadata) if self.llm is not None else None
+        try:
+            async with lock:
+                async for update in app.astream(graph_input, config=config, stream_mode="updates"):
+                    logger.info("Interactive drive update task_id=%s nodes=%s", task_id, list(update.keys()))
+                snapshot = await app.aget_state(config)
+                next_nodes = tuple(getattr(snapshot, "next", ()) or ())
+                values = getattr(snapshot, "values", {}) or {}
+                logger.info(
+                    "Interactive drive snapshot task_id=%s next_nodes=%s node_results=%s elapsed_ms=%s",
+                    task_id,
+                    next_nodes,
+                    len(values.get("node_results", []) or []),
+                    int((time.perf_counter() - started) * 1000),
+                )
+                if not next_nodes:
+                    task = self.task_store.get_task(task_id)
+                    if task is not None:
+                        final_text = self._build_final_text(values)
+                        if monitor.enabled and task.created_at_monotonic:
+                            monitor.workflow_total_duration_seconds.labels(
+                                workflow_type="interactive_topic",
+                                group_id=task.chat_id or "unknown",
+                            ).observe(time.perf_counter() - task.created_at_monotonic)
+                        logger.info(
+                            "Interactive topic final card update task_id=%s final_chars=%s node_results=%s",
+                            task_id,
+                            len(final_text),
+                            len(values.get("node_results", []) or []),
+                        )
+                        await self.sender.update_workflow_card(
+                            task.card_message_id,
+                            task_id=task_id,
+                            query=task.query,
+                            node_statuses={step.node_name: "done" for step in WORKFLOW_STEPS},
+                            current_node=None,
+                            current_result=final_text,
+                            buttons_node=None,
+                            feedback_buttons=True,
+                        )
+                        if monitor.enabled:
+                            monitor.current_workflow_active.labels(
+                                workflow_type="interactive_topic",
+                                group_id=task.chat_id or "unknown",
+                            ).dec()
+                        self.task_store.mark_feedback_waiting(task_id, task.card_message_id)
+        finally:
+            if self.llm is not None and token is not None:
+                self.llm.reset_trace_context(token)
 
     def _on_timeout(self, task_id: str, node_name: str) -> None:
         try:
@@ -696,6 +832,176 @@ class InteractiveTopicWorkflow:
         live_data = diagnosis_state.get("live_data", {})
         return f"工具调用完成：\n{_format_live_data(live_data)}", diagnosis_state
 
+
+    async def _tool_router(self, state: TopicFlowState) -> NodeRunResult:
+        diagnosis_state = self._diagnosis_state(state)
+        default_plan = _default_tool_plan(state, diagnosis_state)
+        if self.llm is None:
+            tool_plan = default_plan
+        else:
+            prompt = _build_tool_router_prompt(state, diagnosis_state, default_plan)
+            try:
+                response = await self.llm.call(
+                    prompt,
+                    prompt_name="tool_router",
+                    prompt_variables={
+                        "query": state.get("query", ""),
+                        "node_results": state.get("node_results", []),
+                        "default_plan": default_plan,
+                    },
+                    metadata={
+                        "node_name": "tool_router",
+                        "generation_name": "tool_router",
+                        "available_tools": _allowed_tool_names(),
+                        **current_trace_context(),
+                    },
+                )
+                tool_plan = _coerce_tool_plan(response, default_plan)
+            except Exception:
+                logger.warning("Interactive tool router LLM failed task_id=%s; using default plan", state.get("task_id"), exc_info=True)
+                monitor.record_error("tool_router_llm_error")
+                tool_plan = default_plan
+        tool_plan = _sanitize_tool_plan(tool_plan)
+        selected_tools = [str(item.get("tool") or "") for item in tool_plan.get("tool_calls", []) if isinstance(item, dict)]
+        self._log_agent_event(
+            event_type="agent_decision",
+            event="tool_plan",
+            node_name="tool_router",
+            state=state,
+            status="planned" if selected_tools else "skipped",
+            selected_tools=selected_tools,
+            tool_call_count=len(selected_tools),
+            reason=str(tool_plan.get("reason") or ""),
+            need_tools=bool(tool_plan.get("need_tools")),
+        )
+        diagnosis_state = self._merge_diagnosis_state(state, {"tool_plan": tool_plan})
+        return _format_tool_plan(tool_plan), diagnosis_state
+
+    async def _tool_executor(self, state: TopicFlowState) -> NodeRunResult:
+        diagnosis_state = self._diagnosis_state(state)
+        tool_plan = _sanitize_tool_plan(state.get("tool_plan") or diagnosis_state.get("tool_plan") or {})
+        if not tool_plan.get("need_tools"):
+            diagnosis_state = self._merge_diagnosis_state(state, {"tool_results": [], "live_data": {}})
+            return "Tool execution skipped: tool_router did not request tools.", diagnosis_state
+
+        provider = _get_tools_provider()
+        tool_results: list[dict[str, object]] = []
+        live_data: dict[str, object] = {}
+        evidence = list(diagnosis_state.get("evidence", []))
+        group_id = str(state.get("chat_id") or "")
+        for call in tool_plan.get("tool_calls", []):
+            if not isinstance(call, dict):
+                continue
+            started = time.perf_counter()
+            tool_name = str(call.get("tool") or "")
+            arguments = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
+            status = "success"
+            error_message = ""
+            payload: object = {}
+            try:
+                payload = await _execute_tool_call(
+                    provider,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    alert_summary=str(diagnosis_state.get("alert_summary") or state.get("query") or ""),
+                    group_id=group_id,
+                )
+                live_data[_live_data_key(tool_name)] = _compact_tool_payload(payload)
+            except Exception as exc:
+                status = "failed"
+                error_message = _truncate_text(str(exc), 1000)
+                payload = {"error": error_message}
+                live_data[_live_data_key(tool_name)] = _compact_tool_payload(payload)
+                monitor.record_error("tool_executor_error")
+                logger.warning("Interactive tool execution failed task_id=%s tool=%s error=%s", state.get("task_id"), tool_name, exc)
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            result_count = _tool_result_count(payload)
+            record = {
+                "tool_name": tool_name,
+                "purpose": str(call.get("purpose") or ""),
+                "arguments": _redact_tool_arguments(arguments),
+                "status": status,
+                "result_count": result_count,
+                "elapsed_ms": elapsed_ms,
+                "summary": _tool_result_summary(payload),
+            }
+            if error_message:
+                record["error_message"] = error_message
+            tool_results.append(record)
+            evidence.append(f"Tool {tool_name} {status}: {record['summary']}")
+            self._log_agent_event(
+                event_type="tool_call",
+                event="execute",
+                node_name="tool_executor",
+                state=state,
+                status=status,
+                tool_name=tool_name,
+                purpose=record["purpose"],
+                query=_tool_query(arguments),
+                result_count=result_count,
+                elapsed_ms=elapsed_ms,
+                error_message=error_message,
+            )
+        diagnosis_state = self._merge_diagnosis_state(state, {"tool_results": tool_results, "live_data": live_data, "evidence": evidence})
+        return _format_tool_results(tool_results), diagnosis_state
+
+    async def _evidence_review(self, state: TopicFlowState) -> NodeRunResult:
+        diagnosis_state = self._diagnosis_state(state)
+        tool_results = [
+            item for item in (state.get("tool_results") or diagnosis_state.get("tool_results") or [])
+            if isinstance(item, dict)
+        ]
+        success_count = sum(1 for item in tool_results if item.get("status") == "success")
+        failure_count = sum(1 for item in tool_results if item.get("status") == "failed")
+        evidence_count = len(diagnosis_state.get("evidence", []))
+        review = {
+            "is_sufficient": success_count > 0 or evidence_count > 0,
+            "reason": f"tool_success_count={success_count}, tool_failure_count={failure_count}, evidence_count={evidence_count}",
+            "missing_evidence": [] if success_count > 0 else ["live_metrics_or_logs"],
+            "tool_success_count": success_count,
+            "tool_failure_count": failure_count,
+            "evidence_count": evidence_count,
+        }
+        if self.llm is not None:
+            prompt = _build_evidence_review_prompt(state, diagnosis_state, tool_results, review)
+            try:
+                response = await self.llm.call(
+                    prompt,
+                    prompt_name="evidence_review",
+                    prompt_variables={
+                        "tool_results": tool_results,
+                        "evidence": diagnosis_state.get("evidence", []),
+                        "default_review": review,
+                    },
+                    metadata={
+                        "node_name": "evidence_review",
+                        "generation_name": "evidence_review",
+                        "tool_success_count": success_count,
+                        "tool_failure_count": failure_count,
+                        "evidence_count": evidence_count,
+                        **current_trace_context(),
+                    },
+                )
+                review = _coerce_evidence_review(response, review)
+            except Exception:
+                logger.warning("Interactive evidence review LLM failed task_id=%s; using rule review", state.get("task_id"), exc_info=True)
+                monitor.record_error("evidence_review_llm_error")
+        self._log_agent_event(
+            event_type="evidence_review",
+            event="review",
+            node_name="evidence_review",
+            state=state,
+            status="sufficient" if review.get("is_sufficient") else "insufficient",
+            is_sufficient=bool(review.get("is_sufficient")),
+            reason=str(review.get("reason") or ""),
+            missing_evidence=review.get("missing_evidence") or [],
+            tool_success_count=int(review.get("tool_success_count") or success_count),
+            tool_failure_count=int(review.get("tool_failure_count") or failure_count),
+            evidence_count=int(review.get("evidence_count") or evidence_count),
+        )
+        diagnosis_state = self._merge_diagnosis_state(state, {"evidence_review": review})
+        return _format_evidence_review(review), diagnosis_state
+
     async def _generate_plan(self, state: TopicFlowState) -> NodeRunResult:
         if self.llm is None:
             diagnosis_state = self._merge_diagnosis_state(
@@ -710,7 +1016,16 @@ class InteractiveTopicWorkflow:
                 },
             )
             return "方案生成跳过：LLM 未配置。", diagnosis_state
-        update = await generate_plan_node(self._diagnosis_state(state), self.llm)
+        try:
+            update = await generate_plan_node(self._diagnosis_state(state), self.llm)
+        except Exception as exc:
+            logger.warning(
+                "Interactive generate_plan LLM failed task_id=%s; using evidence-aware fallback plan",
+                state.get("task_id"),
+                exc_info=True,
+            )
+            monitor.record_error("interactive_generate_plan_llm_error")
+            update = _fallback_plan_update(self._diagnosis_state(state), exc)
         diagnosis_state = self._merge_diagnosis_state(state, update)
         return _format_plan_result(diagnosis_state.get("recommended_plan", {}), diagnosis_state.get("evidence", [])), diagnosis_state
 
@@ -737,7 +1052,17 @@ class InteractiveTopicWorkflow:
                     state.get("task_id"),
                     len(prompt),
                 )
-                summary = (await self.llm.call(prompt)).strip()
+                summary = (
+                    await self.llm.call(
+                        prompt,
+                        prompt_name="interactive_summary",
+                        prompt_variables={
+                            "query": state.get("query", ""),
+                            "node_results": state.get("node_results", []),
+                        },
+                        metadata={"node_name": "interactive_summary", **current_trace_context()},
+                    )
+                ).strip()
                 logger.info(
                     "Interactive summary LLM completed task_id=%s summary_chars=%s",
                     state.get("task_id"),
@@ -769,6 +1094,115 @@ class InteractiveTopicWorkflow:
             if isinstance(item, dict):
                 lines.append(f"- {item.get('node_name')}: {item.get('result')}")
         return "\n".join(lines)
+
+    def _trace_id_for_input(self, task_id: str, graph_input: TopicFlowState | Command) -> str:
+        if isinstance(graph_input, dict):
+            return str(
+                graph_input.get("trace_id")
+                or trace_id_from_parts(graph_input.get("chat_id"), graph_input.get("root_message_id"))
+            )
+        task = self.task_store.get_task(task_id)
+        if task is not None:
+            return trace_id_from_parts(task.chat_id, task.root_message_id)
+        return task_id
+
+    def _langfuse_metadata(self, task_id: str, graph_input: TopicFlowState | Command) -> dict[str, object]:
+        if isinstance(graph_input, dict):
+            chat_id = graph_input.get("chat_id")
+            root_message_id = graph_input.get("root_message_id")
+            trace_id = self._trace_id_for_input(task_id, graph_input)
+        else:
+            task = self.task_store.get_task(task_id)
+            chat_id = task.chat_id if task else None
+            root_message_id = task.root_message_id if task else None
+            trace_id = trace_id_from_parts(chat_id, root_message_id) if task else task_id
+        return {
+            "trace_id": trace_id,
+            "business_trace_id": trace_id,
+            "trace_name": "interactive_topic",
+            "task_id": task_id,
+            "workflow_thread_id": task_id,
+            "workflow_run_id": task_id,
+            "chat_id": chat_id,
+            "thread_root_message_id": root_message_id,
+            "workflow_type": "interactive_topic",
+            "tags": ["agent-sentinel", "interactive-topic", "feishu"],
+        }
+
+    def _log_node_event(
+        self,
+        *,
+        event: str,
+        node_name: str,
+        state: TopicFlowState,
+        status: str,
+        task: Any | None = None,
+        elapsed_ms: int | None = None,
+        error: BaseException | None = None,
+        **extra: object,
+    ) -> None:
+        trace_id = str(
+            state.get("trace_id")
+            or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id"))
+            or ""
+        )
+        task_id = str(state.get("task_id") or "")
+        payload: dict[str, object] = {
+            "event_type": "node_event",
+            "workflow_type": "interactive_topic",
+            "event": event,
+            "status": status,
+            "trace_id": trace_id,
+            "business_trace_id": trace_id,
+            "task_id": task_id,
+            "node": node_name,
+            "chat_id": str(state.get("chat_id") or (task.chat_id if task else "") or ""),
+            "root_message_id": str(state.get("root_message_id") or (task.root_message_id if task else "") or ""),
+            "card_message_id": str((task.card_message_id if task else None) or ""),
+            "retry_count": int(state.get("retry_counts", {}).get(node_name, 0)),
+            "previous_results": len(state.get("node_results", [])),
+        }
+        if elapsed_ms is not None:
+            payload["elapsed_ms"] = elapsed_ms
+        if error is not None:
+            payload["error_type"] = type(error).__name__
+            payload["error_message"] = str(error)
+        payload.update({key: value for key, value in extra.items() if value is not None})
+        payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        logger.info("node_event %s", payload_json)
+        node_event_json_logger.info(payload_json)
+
+    def _log_agent_event(
+        self,
+        *,
+        event_type: str,
+        event: str,
+        node_name: str,
+        state: TopicFlowState,
+        status: str,
+        **extra: object,
+    ) -> None:
+        trace_id = str(
+            state.get("trace_id")
+            or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id"))
+            or ""
+        )
+        payload: dict[str, object] = {
+            "event_type": event_type,
+            "workflow_type": "interactive_topic",
+            "event": event,
+            "status": status,
+            "trace_id": trace_id,
+            "business_trace_id": trace_id,
+            "task_id": str(state.get("task_id") or ""),
+            "node": node_name,
+            "chat_id": str(state.get("chat_id") or ""),
+            "root_message_id": str(state.get("root_message_id") or ""),
+        }
+        payload.update({key: value for key, value in extra.items() if value is not None})
+        payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        logger.info("%s %s", event_type, payload_json)
+        node_event_json_logger.info(payload_json)
 
     def _build_feedback_state(self, task: Any, values: dict[str, Any], final_text: str) -> dict[str, Any]:
         node_results = values.get("node_results", [])
@@ -894,6 +1328,330 @@ def _format_scores(scores: list[float], limit: int = 5) -> str:
     if not scores:
         return "[]"
     return "[" + ", ".join(f"{score:.4f}" for score in scores[:limit]) + (", ..." if len(scores) > limit else "") + "]"
+
+
+def _allowed_tool_names() -> list[str]:
+    return ["prometheus_query_metrics", "aliyun_sls_query_logs", "topology_query"]
+
+
+def _default_tool_plan(state: TopicFlowState, diagnosis_state: DiagnosisState) -> dict[str, object]:
+    trace_id = str(state.get("trace_id") or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id")) or "")
+    alert_summary = str(diagnosis_state.get("alert_summary") or state.get("query") or "")
+    return {
+        "need_tools": True,
+        "reason": "Default controlled ReAct plan: query metrics and logs before generating a plan.",
+        "tool_calls": [
+            {
+                "tool": "prometheus_query_metrics",
+                "purpose": "Check Agent-Sentinel service and workflow metrics.",
+                "arguments": {"promql": "up"},
+            },
+            {
+                "tool": "aliyun_sls_query_logs",
+                "purpose": "Query structured node events for the current business trace.",
+                "arguments": {
+                    "query": f'event_type: node_event AND business_trace_id: "{trace_id}"',
+                    "alert_summary": alert_summary,
+                },
+            },
+        ],
+    }
+
+
+def _build_tool_router_prompt(state: TopicFlowState, diagnosis_state: DiagnosisState, default_plan: dict[str, object]) -> str:
+    context = {
+        "query": state.get("query", ""),
+        "business_trace_id": state.get("trace_id") or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id")),
+        "alert_summary": diagnosis_state.get("alert_summary"),
+        "node_results": state.get("node_results", []),
+        "available_tools": _allowed_tool_names(),
+        "default_plan": default_plan,
+    }
+    return (
+        "You are the tool router for an AIOps alert investigation.\n"
+        "Return JSON only. Choose at most 3 read-only tools.\n"
+        "Allowed tools:\n"
+        "- prometheus_query_metrics: query Prometheus with promql or alert_summary.\n"
+        "- aliyun_sls_query_logs: query SLS logs with query or alert_summary.\n"
+        "- topology_query: inspect service dependency topology.\n"
+        "Rules:\n"
+        "- For prometheus_query_metrics, pass exactly one valid PromQL expression per tool call; never comma-separate multiple expressions.\n"
+        "- For aliyun_sls_query_logs, prefer indexed Agent-Sentinel fields such as business_trace_id, event_type, node, status, tool_name, and query.\n"
+        "- Keep query strings concise and read-only.\n"
+        "Schema: {\"need_tools\": boolean, \"reason\": string, "
+        "\"tool_calls\": [{\"tool\": string, \"purpose\": string, \"arguments\": object}]}.\n"
+        f"Context:\n{json.dumps(context, ensure_ascii=False, default=str)}"
+    )
+
+
+def _build_evidence_review_prompt(
+    state: TopicFlowState,
+    diagnosis_state: DiagnosisState,
+    tool_results: list[dict[str, object]],
+    default_review: dict[str, object],
+) -> str:
+    context = {
+        "query": state.get("query", ""),
+        "business_trace_id": state.get("trace_id") or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id")),
+        "tool_results": tool_results,
+        "evidence": diagnosis_state.get("evidence", []),
+        "default_review": default_review,
+    }
+    return (
+        "You are reviewing evidence for an AIOps alert investigation.\n"
+        "Return JSON only. Decide if evidence is sufficient for a safe diagnosis plan.\n"
+        "Schema: {\"is_sufficient\": boolean, \"reason\": string, "
+        "\"missing_evidence\": [string], \"tool_success_count\": integer, "
+        "\"tool_failure_count\": integer, \"evidence_count\": integer}.\n"
+        f"Context:\n{json.dumps(context, ensure_ascii=False, default=str)}"
+    )
+
+
+def _coerce_tool_plan(response: object, default_plan: dict[str, object]) -> dict[str, object]:
+    parsed = _extract_json_object(response)
+    if not isinstance(parsed, dict):
+        return default_plan
+    return parsed
+
+
+def _coerce_evidence_review(response: object, default_review: dict[str, object]) -> dict[str, object]:
+    parsed = _extract_json_object(response)
+    if not isinstance(parsed, dict):
+        return default_review
+    review = dict(default_review)
+    review.update(parsed)
+    review["is_sufficient"] = bool(review.get("is_sufficient"))
+    missing = review.get("missing_evidence")
+    review["missing_evidence"] = missing if isinstance(missing, list) else []
+    return review
+
+
+def _extract_json_object(value: object) -> dict[str, object] | None:
+    if isinstance(value, dict):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            data = json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+    return data if isinstance(data, dict) else None
+
+
+def _sanitize_tool_plan(plan: object) -> dict[str, object]:
+    if not isinstance(plan, dict):
+        return {"need_tools": False, "reason": "Invalid tool plan.", "tool_calls": []}
+    allowed = set(_allowed_tool_names())
+    calls = []
+    for item in plan.get("tool_calls", []):
+        if not isinstance(item, dict):
+            continue
+        tool = str(item.get("tool") or "")
+        if tool not in allowed:
+            continue
+        arguments = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
+        calls.append(
+            {
+                "tool": tool,
+                "purpose": str(item.get("purpose") or ""),
+                "arguments": _redact_tool_arguments(arguments),
+            }
+        )
+        if len(calls) >= MAX_ROUTED_TOOL_CALLS:
+            break
+    return {
+        "need_tools": bool(plan.get("need_tools", bool(calls))) and bool(calls),
+        "reason": str(plan.get("reason") or ""),
+        "tool_calls": calls,
+    }
+
+
+async def _execute_tool_call(
+    provider: Any,
+    *,
+    tool_name: str,
+    arguments: dict[str, object],
+    alert_summary: str,
+    group_id: str | None,
+) -> object:
+    if tool_name == "prometheus_query_metrics":
+        metrics = getattr(provider, "metrics")
+        if "promql" in arguments and hasattr(metrics, "_client") and hasattr(metrics, "_config"):
+            result = await metrics._client.call_tool(  # type: ignore[attr-defined]
+                metrics._config.prometheus_tool,  # type: ignore[attr-defined]
+                {
+                    "promql": str(arguments.get("promql") or ""),
+                    "prometheus_base_url": getattr(metrics._config, "prometheus_base_url", None),  # type: ignore[attr-defined]
+                    "timeout_seconds": int(arguments.get("timeout_seconds") or 10),
+                },
+            )
+            return _extract_mcp_json(result)
+        return await metrics.get_metrics(str(arguments.get("alert_summary") or alert_summary), group_id=group_id)
+    if tool_name == "aliyun_sls_query_logs":
+        logs = getattr(provider, "logs")
+        summary = str(arguments.get("query") or arguments.get("alert_summary") or alert_summary)
+        return await logs.query_logs(summary, group_id=group_id)
+    if tool_name == "topology_query":
+        topology = getattr(provider, "topology")
+        return await topology.get_topology(str(arguments.get("service") or alert_summary), group_id=group_id)
+    raise ValueError(f"Unsupported tool: {tool_name}")
+
+
+def _extract_mcp_json(result: object) -> object:
+    if not isinstance(result, dict):
+        return result
+    content = result.get("content")
+    if isinstance(content, list) and content and isinstance(content[0], dict) and content[0].get("type") == "json":
+        return content[0].get("json")
+    return result
+
+
+def _redact_tool_arguments(arguments: object) -> dict[str, object]:
+    if not isinstance(arguments, dict):
+        return {}
+    redacted: dict[str, object] = {}
+    for key, value in arguments.items():
+        if any(secret in str(key).lower() for secret in ("key", "secret", "token", "password")):
+            redacted[str(key)] = "***"
+        elif isinstance(value, str):
+            redacted[str(key)] = value[:500]
+        else:
+            redacted[str(key)] = value
+    return redacted
+
+
+def _tool_query(arguments: object) -> str:
+    if not isinstance(arguments, dict):
+        return ""
+    return str(arguments.get("promql") or arguments.get("query") or arguments.get("alert_summary") or "")[:500]
+
+
+def _live_data_key(tool_name: str) -> str:
+    if tool_name == "prometheus_query_metrics":
+        return "metrics"
+    if tool_name == "aliyun_sls_query_logs":
+        return "logs"
+    if tool_name == "topology_query":
+        return "topology"
+    return tool_name
+
+
+def _tool_result_count(payload: object) -> int:
+    if isinstance(payload, dict):
+        for key in ("series", "matches", "dependencies"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return len(value)
+        total = payload.get("total")
+        if isinstance(total, int):
+            return total
+    if isinstance(payload, list):
+        return len(payload)
+    return 0
+
+
+def _tool_result_summary(payload: object) -> str:
+    if isinstance(payload, dict):
+        summary = payload.get("summary")
+        if summary:
+            return str(summary)[:500]
+        error = payload.get("error")
+        if error:
+            return f"error={error}"[:500]
+        return json.dumps({key: payload.get(key) for key in list(payload.keys())[:5]}, ensure_ascii=False, default=str)[:500]
+    return str(payload)[:500]
+
+
+def _compact_tool_payload(payload: object) -> object:
+    if isinstance(payload, dict):
+        compact: dict[str, object] = {}
+        for key in ("provider", "tool", "query", "summary", "error", "total", "status"):
+            if key in payload:
+                value = payload.get(key)
+                compact[key] = _truncate_text(value, 500) if isinstance(value, str) else value
+        for key in ("series", "matches", "dependencies"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                compact[key] = value[:3]
+        if compact:
+            return compact
+        return {
+            str(key): _truncate_text(value, 500) if isinstance(value, str) else value
+            for key, value in list(payload.items())[:5]
+        }
+    if isinstance(payload, list):
+        return payload[:3]
+    if isinstance(payload, str):
+        return _truncate_text(payload, 500)
+    return payload
+
+
+def _truncate_text(value: object, limit: int) -> str:
+    text = str(value or "")
+    return text if len(text) <= limit else text[:limit] + "...[truncated]"
+
+
+def _fallback_plan_update(state: DiagnosisState, error: BaseException) -> DiagnosisState:
+    review = state.get("evidence_review") if isinstance(state.get("evidence_review"), dict) else {}
+    missing = review.get("missing_evidence") if isinstance(review, dict) else []
+    missing_items = [str(item) for item in missing] if isinstance(missing, list) else []
+    actions = [
+        "先修正失败的 Prometheus/SLS 查询，补齐关键指标和错误日志证据。",
+        "在证据不足前避免直接执行重启、回滚、扩容等高风险动作。",
+        "优先检查服务拓扑中异常或高延迟的下游依赖，并结合新证据重新生成方案。",
+    ]
+    if missing_items:
+        actions.insert(0, "补齐缺失证据：" + "；".join(missing_items[:3]))
+    evidence = list(state.get("evidence", []))
+    evidence.append(f"generate_plan fallback because LLM failed: {_truncate_text(error, 300)}")
+    return {
+        "recommended_plan": {
+            "summary": "当前证据不足，已生成保守排查方案。",
+            "actions": actions,
+            "risk_level": "medium",
+        },
+        "evidence": evidence,
+        "need_human": True,
+    }
+
+
+def _format_tool_plan(plan: dict[str, object]) -> str:
+    calls = [item for item in plan.get("tool_calls", []) if isinstance(item, dict)]
+    if not calls:
+        return f"Tool router skipped: {plan.get('reason') or 'no tools needed'}"
+    lines = [f"Tool router selected {len(calls)} tool(s): {plan.get('reason') or '-'}"]
+    for index, call in enumerate(calls, start=1):
+        lines.append(f"{index}. {call.get('tool')} - {call.get('purpose') or '-'}")
+    return "\n".join(lines)
+
+
+def _format_tool_results(results: list[dict[str, object]]) -> str:
+    if not results:
+        return "Tool executor completed: no tools were executed."
+    lines = ["Tool executor completed:"]
+    for item in results:
+        lines.append(
+            f"- {item.get('tool_name')} status={item.get('status')} "
+            f"count={item.get('result_count')} elapsed_ms={item.get('elapsed_ms')} summary={item.get('summary')}"
+        )
+    return "\n".join(lines)
+
+
+def _format_evidence_review(review: dict[str, object]) -> str:
+    status = "sufficient" if review.get("is_sufficient") else "insufficient"
+    return (
+        f"Evidence review completed: {status}.\n"
+        f"Reason: {review.get('reason') or '-'}\n"
+        f"Missing evidence: {review.get('missing_evidence') or []}"
+    )
 
 
 def _format_live_data(live_data: dict[str, Any]) -> str:

@@ -18,6 +18,9 @@ class TopicFlowState(TypedDict, total=False):
     retry_counts: dict[str, int]
     node_results: list[dict[str, str]]
     diagnosis_state: DiagnosisState
+    tool_plan: dict[str, object]
+    tool_results: list[dict[str, object]]
+    evidence_review: dict[str, object]
     final_text: str
 
 

@@ -11,67 +11,84 @@ logger = logging.getLogger(__name__)
 
 
 def build_tools_provider(settings: Settings) -> ToolsProvider:
-    """构建工具提供者
-
-    Args:
-        settings: Settings 配置对象
-
-    Returns:
-        ToolsProvider 实现（MockToolsProvider 或 CompositeToolsProvider）
-    """
     from agent_sentinel.tools.mock_tools import MockToolsProvider
 
     provider = settings.tools_provider.strip().lower()
+
+    if provider == "mcp":
+        if not settings.mcp_enabled:
+            logger.warning("MCP tools provider requested but MCP_ENABLED is false, falling back to mock")
+            return MockToolsProvider()
+        if not settings.mcp_server_command:
+            logger.warning("MCP tools provider requested but MCP_SERVER_COMMAND is empty, falling back to mock")
+            return MockToolsProvider()
+        try:
+            return _build_mcp_provider(settings)
+        except Exception as exc:
+            logger.error("Failed to initialize MCP provider: %s, falling back to mock", exc)
+            return MockToolsProvider()
 
     if provider != "aliyun":
         logger.info("Using mock tools provider provider=%s", provider)
         return MockToolsProvider()
 
-    # 检查阿里云配置是否完整
     if not _validate_aliyun_config(settings):
         logger.warning("Aliyun config incomplete, falling back to mock tools provider")
         return MockToolsProvider()
 
     try:
         return _build_aliyun_provider(settings)
-    except ImportError as e:
-        logger.warning("Aliyun SDK not available: %s, falling back to mock", e)
+    except ImportError as exc:
+        logger.warning("Aliyun SDK not available: %s, falling back to mock", exc)
         return MockToolsProvider()
-    except Exception as e:
-        logger.error("Failed to initialize aliyun provider: %s, falling back to mock", e)
+    except Exception as exc:
+        logger.error("Failed to initialize aliyun provider: %s, falling back to mock", exc)
         return MockToolsProvider()
 
 
 def _validate_aliyun_config(settings: Settings) -> bool:
-    """验证阿里云配置是否完整"""
-    # 检查 SLS 配置
     sls_configured = bool(
         settings.aliyun_sls_access_key_id
         and settings.aliyun_sls_access_key_secret
         and settings.aliyun_sls_project
         and settings.aliyun_sls_logstore
     )
-
-    # 检查 ARMS 配置
     arms_configured = bool(
         settings.aliyun_arms_access_key_id
         and settings.aliyun_arms_access_key_secret
         and settings.aliyun_arms_app_id
     )
-
-    # 至少需要配置一个
     return sls_configured or arms_configured
 
 
+def _build_mcp_provider(settings: Settings) -> ToolsProvider:
+    from agent_sentinel.tools.providers.mcp import MCPToolConfig, MCPToolsProvider
+
+    config = MCPToolConfig(
+        command=settings.mcp_server_command,
+        args=settings.mcp_server_args,
+        timeout_seconds=settings.mcp_timeout_seconds,
+        sls_tool=settings.mcp_sls_tool,
+        prometheus_tool=settings.mcp_prometheus_tool,
+        prometheus_base_url=settings.mcp_prometheus_base_url,
+    )
+    logger.info(
+        "Using MCP tools provider command=%s args_count=%s sls_tool=%s prometheus_tool=%s",
+        config.command,
+        len(config.args),
+        config.sls_tool,
+        config.prometheus_tool,
+    )
+    return MCPToolsProvider(config)
+
+
 def _build_aliyun_provider(settings: Settings) -> ToolsProvider:
-    """构建阿里云工具提供者"""
     from agent_sentinel.tools.mock_tools import (
         MockLogsProvider,
         MockMetricsProvider,
         MockTopologyProvider,
     )
 
-    # 构建 SLS 客户端
     logs_provider = None
     if settings.aliyun_sls_access_key_id and settings.aliyun_sls_access_key_secret:
         from agent_sentinel.tools.providers.aliyun_sls import AliyunSLSClient, SLSLogsProvider
@@ -87,7 +104,6 @@ def _build_aliyun_provider(settings: Settings) -> ToolsProvider:
         )
         logs_provider = SLSLogsProvider(sls_client)
 
-    # 构建 ARMS 客户端
     metrics_provider = None
     if settings.aliyun_arms_access_key_id and settings.aliyun_arms_access_key_secret:
         from agent_sentinel.tools.providers.aliyun_arms import AliyunARMSClient, ARMSMetricsProvider
@@ -101,11 +117,10 @@ def _build_aliyun_provider(settings: Settings) -> ToolsProvider:
         )
         metrics_provider = ARMSMetricsProvider(arms_client)
 
-    # 组合提供者，未配置的部分使用 Mock
     from agent_sentinel.tools.providers.composite import CompositeToolsProvider
 
     return CompositeToolsProvider(
         metrics_provider=metrics_provider or MockMetricsProvider(),
         logs_provider=logs_provider or MockLogsProvider(),
-        topology_provider=MockTopologyProvider(),  # 暂无拓扑 provider
+        topology_provider=MockTopologyProvider(),
     )
