@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_tools_provider(settings: Settings) -> ToolsProvider:
-    # 方法说明：构建并返回调用方需要的对象。
+    # 方法说明：根据配置选择实时数据来源，优先使用真实 provider，配置不完整时降级到 mock。
     from agent_sentinel.tools.mock_tools import MockToolsProvider
 
     provider = settings.tools_provider.strip().lower()
@@ -52,7 +52,7 @@ def build_tools_provider(settings: Settings) -> ToolsProvider:
 
 def _validate_aliyun_config(settings: Settings) -> bool:
     # SLS 和 ARMS 是两个独立能力，只要配置了其中一个就可以构建组合 provider。
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：检查阿里云日志或指标配置是否至少有一组完整，决定能否启用真实云数据源。
     sls_configured = bool(
         settings.aliyun_sls_access_key_id
         and settings.aliyun_sls_access_key_secret
@@ -68,7 +68,7 @@ def _validate_aliyun_config(settings: Settings) -> bool:
 
 
 def _build_mcp_provider(settings: Settings) -> ToolsProvider:
-    # 方法说明：构建并返回调用方需要的对象。
+    # 方法说明：把全局配置转换成 MCP 工具配置，创建通过 MCP Server 查询外部数据的 provider。
     from agent_sentinel.tools.providers.mcp import MCPToolConfig, MCPToolsProvider
 
     # 将 settings 映射成 MCP provider 自己的配置对象，避免 provider 直接依赖全局 Settings。
@@ -91,7 +91,7 @@ def _build_mcp_provider(settings: Settings) -> ToolsProvider:
 
 
 def _build_aliyun_provider(settings: Settings) -> ToolsProvider:
-    # 方法说明：构建并返回调用方需要的对象。
+    # 方法说明：按已配置的阿里云能力组装组合 provider，日志走 SLS，指标走 ARMS，缺失部分用 mock 补位。
     from agent_sentinel.tools.mock_tools import (
         MockLogsProvider,
         MockMetricsProvider,

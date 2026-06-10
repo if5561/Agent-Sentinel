@@ -29,22 +29,22 @@ class CompositeToolsProvider:
 
     @property
     def metrics(self) -> MetricsProvider:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：返回当前组合 provider 使用的指标查询实现。
         return self._metrics
 
     @property
     def logs(self) -> LogsProvider:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：返回当前组合 provider 使用的日志查询实现。
         return self._logs
 
     @property
     def topology(self) -> TopologyProvider:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：返回当前组合 provider 使用的拓扑查询实现。
         return self._topology
 
     async def fetch_all(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
         """并发获取所有数据"""
-        # 方法说明：读取并返回当前流程需要的数据。
+        # 方法说明：并发查询指标、日志和拓扑，把三个数据源的结果合并成诊断节点可消费的现场数据。
         metrics, logs, topology = await asyncio.gather(
             self._metrics.get_metrics(alert_summary, group_id),
             self._logs.query_logs(alert_summary, group_id),

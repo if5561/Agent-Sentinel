@@ -63,11 +63,11 @@ class MilvusVectorClient:
         )
 
     async def ensure_static_doc_collection(self, collection_name: str, dimension: int) -> None:
-        # 方法说明：校验输入或状态是否满足继续处理的条件。
+        # 方法说明：确保 Milvus 里有指定集合，没有时按向量维度创建一套可检索的 schema。
         await asyncio.to_thread(self._ensure_static_doc_collection_sync, collection_name, dimension)
 
     async def upsert(self, collection_name: str, records: list[dict[str, Any]]) -> None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：把已经带向量的文档或历史案例写入 Milvus，供后续相似度检索。
         if not records:
             return
         try:
@@ -85,7 +85,7 @@ class MilvusVectorClient:
         expr: str | None,
         output_fields: list[str] | None,
     ) -> list[RetrievedDoc]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：在线程中执行 Milvus 同步搜索，并把返回结果转换成项目统一的检索文档。
         started = time.perf_counter()
         client = self._get_client()
         fields = output_fields or [
@@ -163,7 +163,7 @@ class MilvusVectorClient:
         return docs
 
     def _ensure_static_doc_collection_sync(self, collection_name: str, dimension: int) -> None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：同步创建静态文档集合，字段设计同时兼容知识文档和历史案例。
         client = self._get_client()
         if client.has_collection(collection_name):
             logger.info("Milvus collection already exists collection=%s", collection_name)
@@ -205,14 +205,14 @@ class MilvusVectorClient:
         logger.info("Milvus static doc collection created collection=%s dimension=%s", collection_name, dimension)
 
     def _upsert_sync(self, collection_name: str, records: list[dict[str, Any]]) -> None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：调用 Milvus upsert 写入记录，存在同 ID 时覆盖旧版本。
         started = time.perf_counter()
         client = self._get_client()
         client.upsert(collection_name=collection_name, data=records)
         logger.info("Milvus records upserted collection=%s count=%s elapsed_ms=%s", collection_name, len(records), int((time.perf_counter() - started) * 1000))
 
     def _get_client(self) -> Any:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：按需创建并缓存 Milvus 客户端，避免每次检索都重新建立连接。
         if self._client is not None:
             return self._client
 
@@ -237,7 +237,7 @@ class MilvusVectorClient:
 
 def _hit_to_doc(hit: Any, source_type: SourceType) -> RetrievedDoc:
     # pymilvus 不同版本可能返回 dict 或对象形态，这里统一转换成 RetrievedDoc。
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：把 Milvus 命中的原始记录转换成业务层可读的 RetrievedDoc。
     if isinstance(hit, dict):
         entity = hit.get("entity") or {}
         raw_score = hit.get("score", hit.get("distance", 0.0))
@@ -265,7 +265,7 @@ def _hit_to_doc(hit: Any, source_type: SourceType) -> RetrievedDoc:
 
 
 def _parse_metadata(value: Any) -> dict[str, Any]:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：解析 Milvus 中保存的 metadata JSON，解析失败时保留原始文本方便排查。
     if isinstance(value, dict):
         return value
     if isinstance(value, str) and value:
@@ -279,13 +279,13 @@ def _parse_metadata(value: Any) -> dict[str, Any]:
 
 
 def _empty_to_none(value: Any) -> str | None:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：把空字符串统一转成 None，让检索结果里的可选字段更干净。
     text = str(value or "").strip()
     return text or None
 
 
 def _to_int_or_none(value: Any) -> int | None:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：把 Milvus 返回的时间字段转成整数，无法转换时返回空值。
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -293,7 +293,7 @@ def _to_int_or_none(value: Any) -> int | None:
 
 
 def _format_scores(scores: list[float], limit: int = 5) -> str:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：把检索分数格式化成短文本，方便日志里快速判断召回质量。
     if not scores:
         return "[]"
     suffix = ", ..." if len(scores) > limit else ""

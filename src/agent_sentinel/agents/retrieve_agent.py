@@ -28,7 +28,7 @@ async def retrieve_node(state: DiagnosisState, retriever: BaseRetriever) -> Diag
 
 
 def should_fetch(state: DiagnosisState) -> str:
-    # 方法说明：校验输入或状态是否满足继续处理的条件。
+    # 方法说明：根据告警摘要里的关键词判断是否需要进一步查询实时指标、日志和拓扑。
     text = f"{state.get('alert_summary', '')} {state.get('raw_alert', {})}".lower()
     keywords = ("error", "critical", "timeout", "latency", "失败", "超时", "异常", "错误")
     # 简单规则用于决定是否补充实时数据，避免低风险或信息不足的请求无谓调用外部工具。
@@ -38,7 +38,7 @@ def should_fetch(state: DiagnosisState) -> str:
 
 
 def _build_filters(state: DiagnosisState) -> RagFilters:
-    # 方法说明：构建并返回调用方需要的对象。
+    # 方法说明：从告警状态里整理检索过滤条件，让 RAG 更优先找同服务、同级别、同群组的资料。
     raw_alert = state.get("raw_alert", {})
     # RAG filter 是软边界：尽量按服务、级别、群组和标签缩小召回范围。
     return RagFilters(
@@ -50,6 +50,6 @@ def _build_filters(state: DiagnosisState) -> RagFilters:
 
 
 def _clean(value: object) -> str | None:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：把空字符串、None 等无效过滤值清掉，避免传给检索器造成误筛选。
     text = str(value or "").strip()
     return text or None

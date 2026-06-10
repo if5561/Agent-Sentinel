@@ -25,7 +25,7 @@ SERVICE_PATTERNS = [
 
 
 def _iter_sls_logs(result: Any) -> list[Any]:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：兼容 SLS SDK 对象和测试字典两种结果形态，统一取出日志列表。
     if hasattr(result, "get_logs"):
         return list(result.get_logs())
     if isinstance(result, dict):
@@ -35,7 +35,7 @@ def _iter_sls_logs(result: Any) -> list[Any]:
 
 
 def _log_contents(log: Any) -> Any:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：兼容不同日志对象结构，统一提取一条日志的字段内容。
     if hasattr(log, "get_contents"):
         return log.get_contents()
     if isinstance(log, dict):
@@ -44,7 +44,7 @@ def _log_contents(log: Any) -> Any:
 
 
 def _log_time(log: Any) -> Any:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：兼容不同日志对象结构，统一提取日志时间戳。
     if hasattr(log, "get_time"):
         return log.get_time()
     if isinstance(log, dict):
@@ -53,7 +53,7 @@ def _log_time(log: Any) -> Any:
 
 
 def _extract_message(contents: dict[str, Any]) -> str:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：从常见字段里提取日志正文，兼容 message、msg、content 等命名。
     message = contents.get("message") or contents.get("msg") or contents.get("content") or ""
     return str(message)
 
@@ -87,7 +87,7 @@ class AliyunSLSClient:
 
     def _get_client(self):
         """延迟初始化 SLS 客户端"""
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：首次查询日志时才创建 SLS SDK 客户端，减少启动时对云 SDK 的依赖。
         if self._client is None:
             try:
                 from aliyun.log.logclient import LogClient
@@ -247,7 +247,7 @@ class SLSLogsProvider:
         }
 
     def _build_queries(self, alert_summary: str) -> list[str]:
-        # 方法说明：构建并返回调用方需要的对象。
+        # 方法说明：根据告警摘要生成多条候选查询，先精确匹配原文，再退回关键词模糊查询。
         queries = []
         raw_query = self._build_raw_query(alert_summary)
         if raw_query:
@@ -260,7 +260,7 @@ class SLSLogsProvider:
         return queries or ["*"]
 
     def _build_raw_query(self, alert_summary: str) -> str | None:
-        # 方法说明：构建并返回调用方需要的对象。
+        # 方法说明：把完整告警摘要转成 SLS 精确短语查询，用于优先命中原始日志。
         text = alert_summary.strip()
         if not text:
             return None
@@ -278,7 +278,7 @@ class SLSLogsProvider:
         Returns:
             SLS 查询语句（LOGQL 语法）
         """
-        # 方法说明：构建并返回调用方需要的对象。
+        # 方法说明：从告警摘要中提取日志级别、服务名和关键词，拼成可执行的 SLS 查询语句。
         # 提取日志级别
         log_level = self._extract_log_level(alert_summary)
 
@@ -315,7 +315,7 @@ class SLSLogsProvider:
 
     def _extract_log_level(self, text: str) -> str | None:
         """从文本中提取日志级别"""
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：从告警文字中识别 ERROR、WARN 等日志级别，帮助缩小日志查询范围。
         text_upper = text.upper()
         for level in LOG_LEVELS:
             if level in text_upper:
@@ -324,7 +324,7 @@ class SLSLogsProvider:
 
     def _extract_service_name(self, text: str) -> str | None:
         """从文本中提取服务名"""
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：从告警文字中识别常见服务名，例如 xxx-service 或 xxx-api。
         for pattern in SERVICE_PATTERNS:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
@@ -336,7 +336,7 @@ class SLSLogsProvider:
 
         过滤停用词，提取有意义的关键词。
         """
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：从告警文字中抽取可用于日志搜索的关键词，并过滤常见无意义词。
         # 停用词列表
         stop_words = {
             "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一", "一个",

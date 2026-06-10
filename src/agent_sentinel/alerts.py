@@ -41,11 +41,11 @@ class FeishuWebhookNotifier:
         self.timeout = timeout
 
     def is_configured(self) -> bool:
-        # 方法说明：校验输入或状态是否满足继续处理的条件。
+        # 方法说明：判断飞书 webhook 告警通道是否可用；未配置时调用方会跳过发送。
         return self.enabled and bool(self.webhook_url)
 
     def _build_sign(self, timestamp: str) -> str:
-        # 方法说明：构建并返回调用方需要的对象。
+        # 方法说明：按飞书 webhook 规则生成签名，防止外部伪造告警消息。
         if not self.secret:
             return ""
         # 飞书自定义机器人签名格式为 timestamp + "\n" + secret，再做 HMAC-SHA256。
@@ -113,7 +113,7 @@ class RealtimeAlertService:
         dedupe_key: str | None = None,
         tags: list[str] | None = None,
     ) -> tuple[bool, bool]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：接收一条内部告警，先做去重和记录，再决定是否发送到飞书。
         normalized_level = level.upper()
         event = AlertEvent(
             source=source,
@@ -139,7 +139,7 @@ class RealtimeAlertService:
 
     def report_exception(self, scene: str, exc: Exception) -> tuple[bool, bool]:
         # 异常告警使用 scene + 异常类型 + 消息做去重键，避免同一错误短时间刷屏。
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：把 Python 异常包装成标准告警事件，方便统一走去重和飞书通知逻辑。
         details = (
             f"scene: {scene}\n"
             f"exception: {type(exc).__name__}\n"
@@ -156,12 +156,12 @@ class RealtimeAlertService:
         )
 
     def recent_alerts(self, limit: int = 20) -> list[dict[str, object]]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：返回最近保存的告警记录，供接口查看告警历史和去重效果。
         records = list(self._recent_events)[-limit:]
         return [asdict(record) for record in reversed(records)]
 
     def _should_deduplicate(self, event: AlertEvent) -> bool:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：判断同一去重键是否在窗口期内重复出现，重复则不再发送飞书。
         if not event.dedupe_key:
             return False
 
@@ -176,7 +176,7 @@ class RealtimeAlertService:
             return False
 
     def _prune_old_keys(self, now: float) -> None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：清理过期去重键，避免去重缓存无限增长。
         expired = [
             key
             for key, last_seen in self._dedupe_cache.items()
@@ -186,12 +186,12 @@ class RealtimeAlertService:
             self._dedupe_cache.pop(key, None)
 
     def _remember(self, event: AlertEvent) -> None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：把告警放入最近记录队列，后续查询接口可以看到它。
         with self._lock:
             self._recent_events.append(event)
 
     def _format_message(self, event: AlertEvent) -> str:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：把告警字段整理成飞书消息正文，包含环境、来源、级别、摘要和详情。
         lines = [
             f"env: {self.app_env}",
             f"source: {event.source}",

@@ -47,7 +47,7 @@ class DiagnosisWorkflow:
         case_store: HistoryCaseStore | None = None,
         checkpointer: Any | None = None,
     ) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：保存诊断流程需要的依赖，例如模型、飞书发送器、检索器和人工确认记录。
         self.settings = settings
         self.llm = llm
         self.sender = sender
@@ -58,7 +58,7 @@ class DiagnosisWorkflow:
         self._compiled: Any | None = None
 
     def compile(self) -> Any:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：把 workflow.yaml 里的节点和连线编译成可执行流程，相当于生成一张诊断流程图。
         if self._compiled is not None:
             return self._compiled
         # workflow.yaml 负责声明节点和边，代码里的 registry 只提供可执行函数映射。
@@ -94,7 +94,7 @@ class DiagnosisWorkflow:
         return self._compiled
 
     async def run_streaming(self, initial_state: DiagnosisState) -> DiagnosisState:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：从第一步开始运行诊断流程，并边执行边合并每个节点产出的中间结果。
         app = self.compile()
         workflow_thread_id = initial_state.get("workflow_thread_id", "")
         started = time.perf_counter()
@@ -159,7 +159,7 @@ class DiagnosisWorkflow:
         return final_state
 
     async def resume(self, workflow_thread_id: str, resume_payload: dict[str, Any]) -> DiagnosisState:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：当人工点击飞书卡片后，从之前暂停的位置继续执行同一条诊断流程。
         app = self.compile()
         started = time.perf_counter()
         # 恢复前先读取已挂起线程的状态，才能重建 trace、chat_id 和业务上下文。
@@ -228,7 +228,7 @@ class DiagnosisWorkflow:
         return final_state
 
     async def update_state(self, workflow_thread_id: str, state_update: dict[str, Any]) -> None:
-        # 方法说明：更新已有资源或状态对象。
+        # 方法说明：把外部补充的信息写回指定诊断线程，例如人工填写的反馈内容。
         app = self.compile()
         await app.aupdate_state(
             {"configurable": {"thread_id": workflow_thread_id}, "recursion_limit": 20},
@@ -237,7 +237,7 @@ class DiagnosisWorkflow:
 
     def _node_registry(self) -> dict[str, NodeFn]:
         # partial 在这里注入外部依赖，让各节点函数保持“输入 state，输出 state 增量”的简单形态。
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：登记每个诊断步骤对应的实际函数，配置文件中的节点名会在这里找到执行逻辑。
         registry = {
             "understand": partial(
                 understand_node,
@@ -273,9 +273,9 @@ class DiagnosisWorkflow:
         return {name: self._track_node(name, node) for name, node in registry.items()}
 
     def _track_node(self, node_name: str, node: NodeFn) -> NodeFn:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：给每个诊断节点外面包一层日志和监控，便于看到哪一步开始、结束或报错。
         async def wrapped(state: DiagnosisState) -> DiagnosisState:
-            # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+            # 方法说明：真正执行单个节点，并把节点耗时记录到监控指标里。
             trace_id = trace_id_from_state(state)
             logger.info("Diagnosis node execution start trace_id=%s node=%s", trace_id, node_name)
             with monitor.track_node(node_name, state.get("chat_id")):
@@ -287,7 +287,7 @@ class DiagnosisWorkflow:
 
     def _route_registry(self) -> dict[str, Callable[[DiagnosisState], str]]:
         # 路由函数返回值必须和 workflow.yaml 里的 conditional_edges.mapping key 保持一致。
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：登记分支判断规则，例如是否需要取实时数据、方案是否需要重试。
         return {
             "should_fetch": should_fetch,
             "validation_result": validation_result,
@@ -299,7 +299,7 @@ class DiagnosisWorkflow:
 
     async def _send_progress(self, node_name: str, state: DiagnosisState) -> None:
         # 进度消息是用户体验层增强；真正的流程状态仍以 LangGraph state 为准。
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：每完成一个诊断节点，就往飞书会话里发送一条可读的进度提示。
         status = {
             "understand": "✅ 已完成告警理解（缓存查找），正在检索历史案例...",
             "retrieve": "✅ 历史案例检索完成，正在判断是否需要实时数据...",
@@ -326,7 +326,7 @@ class DiagnosisWorkflow:
         )
 
     def _langfuse_metadata(self, state: DiagnosisState) -> dict[str, object]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：整理写入 Langfuse 的追踪信息，让一次诊断里的多次模型调用能串起来。
         trace_id = trace_id_from_state(state)
         # 观测元数据同时携带业务 trace 和工作流线程 ID，便于从日志跳到模型调用链路。
         return {
@@ -344,7 +344,7 @@ class DiagnosisWorkflow:
 
 
 def build_llm_executor(settings: Settings) -> LLMExecutor:
-    # 方法说明：构建并返回调用方需要的对象。
+    # 方法说明：根据配置创建模型执行器，内部会处理多模型 fallback、重试和观测上报。
     return LLMExecutor(
         models=settings.aiops_llm_models,
         api_key=settings.openai_api_key,

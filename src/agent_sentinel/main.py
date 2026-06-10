@@ -40,12 +40,12 @@ from agent_sentinel.utils.logger import configure_logger
 
 
 def configure_logging(log_level: str) -> None:
-    # 方法说明：初始化对象，并保存后续调用需要的状态。
+    # 方法说明：设置整套服务的日志级别，让后续每个模块都按同一规则输出运行记录。
     configure_logger(log_level)
 
 
 def build_app(settings: Settings | None = None) -> FastAPI:
-    # 方法说明：构建并返回调用方需要的对象。
+    # 方法说明：创建 Web 应用，并把配置、监控、飞书、诊断工作流等核心组件接到一起。
     settings = settings or get_settings()
     configure_logging(settings.log_level)
     # Prometheus 指标开关在应用构建时统一生效，避免各业务节点重复读取环境变量。
@@ -88,7 +88,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=settings.app_name)
 
     def get_chat_service() -> SingleTurnChatService:
-        # 方法说明：读取并返回当前流程需要的数据。
+        # 方法说明：按需创建普通聊天服务；只有真正调用聊天接口时才初始化模型对象。
         nonlocal chat_service
         # 单轮聊天服务只在首次请求时初始化，避免启动阶段就创建不一定会用到的模型客户端。
         if chat_service is None:
@@ -96,7 +96,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return chat_service
 
     def get_aiops_workflow() -> DiagnosisWorkflow:
-        # 方法说明：读取并返回当前流程需要的数据。
+        # 方法说明：按需创建 AIOps 诊断工作流；它负责把告警理解、检索、生成方案等步骤串起来。
         nonlocal aiops_workflow
         # 诊断工作流依赖 LLM、RAG、飞书发送器等对象，采用懒加载可以降低健康检查和简单接口的启动成本。
         if aiops_workflow is None:
@@ -110,7 +110,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return aiops_workflow
 
     def get_interactive_topic_workflow() -> InteractiveTopicWorkflow:
-        # 方法说明：读取并返回当前流程需要的数据。
+        # 方法说明：按需创建飞书单卡片交互流程；它负责在同一张卡片里持续更新诊断进度。
         nonlocal interactive_topic_workflow
         # 交互式话题工作流有独立的状态存储和卡片更新逻辑，仅在启用并首次触发时创建。
         if interactive_topic_workflow is None:
@@ -135,14 +135,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return interactive_topic_workflow
 
     def verify_alert_token(provided_token: str | None) -> None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：检查外部告警接口的访问令牌，防止未授权系统随意触发诊断。
         expected_token = settings.alert_api_token
         # 未配置 token 时保持开发环境易用；一旦配置，则所有告警入口都必须携带正确凭证。
         if expected_token and provided_token != expected_token:
             raise HTTPException(status_code=401, detail="Invalid alert token.")
 
     def verify_feishu_event_token(payload: FeishuEventEnvelope) -> None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：检查飞书推送事件中的校验令牌，确认消息确实来自可信飞书应用。
         expected_token = settings.feishu_event_verification_token
         if not expected_token:
             return
@@ -157,7 +157,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=401, detail="Invalid Feishu event token.")
 
     def report_exception(scene: str, exc: Exception) -> None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：把接口内部异常转成飞书告警，便于运维人员第一时间知道服务自身出错。
         try:
             alert_service.report_exception(scene, exc)
         except Exception as notify_exc:  # pragma: no cover
@@ -179,7 +179,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         workflow_thread_id: str | None = None,
         workflow_run_id: str | None = None,
     ) -> DiagnosisState:
-        # 方法说明：构建并返回调用方需要的对象。
+        # 方法说明：把不同来源的告警统一整理成诊断状态，后面的每个节点都围绕这份状态继续补充信息。
         trace_id = trace_id_from_parts(chat_id, thread_root_message_id)
         # 所有诊断入口最终都归一化成同一份 LangGraph state，后续节点只依赖这个状态契约。
         return {
@@ -225,7 +225,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         mention_open_id: str | None = None,
         mention_name: str | None = None,
     ) -> tuple[str, bool]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：执行完整诊断链路，并在需要时把最终结果发送回飞书会话。
         if not settings.alert_analysis_enabled:
             logger.info("Diagnosis workflow skipped because alert analysis is disabled chat_id=%s source=%s", chat_id, source)
             return "Alert analysis is disabled.", False
@@ -281,7 +281,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return final_text, sent
 
     async def resume_workflow_from_callback(payload: dict[str, Any], transport: str) -> dict[str, str]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：处理飞书卡片按钮回调，把“人工确认/拒绝”的结果送回暂停中的工作流。
         logger.info("Card callback received transport=%s payload_keys=%s", transport, sorted(payload.keys()))
         if settings.interactive_topic_enabled:
             # 新版单卡片流程优先消费回调；如果不是它的 payload，再回退到旧版人审卡片解析。
@@ -330,7 +330,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         mention_open_id: str | None = None,
         mention_name: str | None = None,
     ) -> tuple[str, bool]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：把同步入口包装成统一诊断调用；普通流程直接跑工作流，单卡片模式走交互式话题。
         logger.info(
             "Analyze request routed chat_id=%s source=%s trigger_type=%s interactive_topic=%s root_message_id=%s query_chars=%s",
             chat_id,
@@ -369,7 +369,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.on_event("startup")
     def startup_event() -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：服务启动时准备飞书长连接和轮询组件，让机器人能主动接收群消息。
         nonlocal longconn_bot, poller_bot
         logger.info("Application startup begin")
         # 长连接和轮询都封装为可配置组件，组件内部会根据开关决定是否真正启动。
@@ -392,7 +392,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.on_event("shutdown")
     async def shutdown_event() -> None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：服务关闭前收尾观测数据，尽量把模型调用链路和诊断 trace 写完整。
         logger.info("Application shutdown begin")
         observability_clients: list[LLMExecutor] = []
         # 关闭前主动 flush Langfuse 等可观测客户端，减少进程退出时丢失 trace 的概率。
@@ -409,12 +409,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：提供健康检查接口，外部系统可用它判断服务是否还活着。
         return HealthResponse(status="ok", app=settings.app_name)
 
     @app.post("/chat/once", response_model=ChatResponse)
     def chat_once(payload: ChatRequest) -> ChatResponse:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：提供一次性聊天接口，用于验证模型配置或做简单问答，不进入 AIOps 诊断流程。
         try:
             answer = get_chat_service().reply_once(payload.message)
             return ChatResponse(answer=answer, model=settings.openai_model)
@@ -426,7 +426,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/alerts/test")
     def test_alert() -> dict[str, str]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：手动触发一条测试告警，用来验证飞书告警通道是否配置正确。
         try:
             dispatched, deduplicated = alert_service.report(
                 source="agent-sentinel",
@@ -448,7 +448,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         payload: AlertReportRequest,
         x_alert_token: str | None = Header(default=None),
     ) -> AlertReportResponse:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：接收外部系统上报的告警，只负责记录/通知，不启动完整 AI 诊断。
         try:
             verify_alert_token(x_alert_token)
             dispatched, deduplicated = alert_service.report(
@@ -477,7 +477,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         limit: int = Query(default=20, ge=1, le=100),
         x_alert_token: str | None = Header(default=None),
     ) -> list[AlertRecordResponse]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：查询最近的告警记录，方便排查“告警是否已发送、是否被去重”。
         verify_alert_token(x_alert_token)
         return [AlertRecordResponse(**item) for item in alert_service.recent_alerts(limit=limit)]
 
@@ -486,7 +486,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         payload: AlertAnalyzeRequest,
         x_alert_token: str | None = Header(default=None),
     ) -> AlertAnalyzeResponse:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：接收外部告警并启动 AI 诊断，最后返回诊断文本以及是否已发送飞书。
         try:
             verify_alert_token(x_alert_token)
             thread_root_message_id = payload.thread_root_message_id or payload.message_id
@@ -521,7 +521,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         payload: AlertAnalyzeRequest,
         x_alert_token: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：直接运行 LangGraph 诊断并返回完整状态，适合调试每个诊断节点的中间结果。
         try:
             verify_alert_token(x_alert_token)
             initial_state = build_diagnosis_state(
@@ -577,7 +577,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/feishu/card/callback")
     async def feishu_card_callback(request: Request) -> dict[str, str]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：接收飞书卡片按钮事件，例如“批准方案”“拒绝方案”等人工操作。
         try:
             payload = await request.json()
             logger.info("HTTP Feishu card callback accepted payload_keys=%s", sorted(payload.keys()))
@@ -589,7 +589,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/webhook/card")
     async def webhook_card_callback(request: Request) -> dict[str, str]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：提供兼容 webhook 的卡片回调入口，最终仍复用同一套恢复工作流逻辑。
         try:
             payload = await request.json()
             logger.info("HTTP webhook card callback accepted payload_keys=%s", sorted(payload.keys()))
@@ -601,7 +601,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/feishu/events")
     async def feishu_events(payload: FeishuEventEnvelope) -> dict[str, object]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：接收飞书普通消息事件，把用户在群里的 @ 消息转换成一次诊断请求。
         try:
             logger.info(
                 "HTTP Feishu event received type=%s challenge=%s event_type=%s",
@@ -711,7 +711,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/metrics")
     def metrics() -> Response:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：暴露 Prometheus 指标文本，供监控系统定时抓取服务运行数据。
         if not settings.metrics_enabled:
             raise HTTPException(status_code=404, detail="Metrics are disabled.")
         return Response(content=monitor.render_latest(), media_type=CONTENT_TYPE_LATEST)
@@ -720,7 +720,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
 
 def run_cli_once(settings: Settings, message: str) -> int:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：命令行模式下跑一次普通聊天，方便本地快速验证模型是否可用。
     chat_service = SingleTurnChatService(settings)
     answer = chat_service.reply_once(message)
     print(answer)
@@ -728,7 +728,7 @@ def run_cli_once(settings: Settings, message: str) -> int:
 
 
 def run() -> int:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：命令行入口；带 message 参数时跑一次聊天，否则启动 Web 服务。
     parser = argparse.ArgumentParser(description="Agent Sentinel runner")
     parser.add_argument("--message", help="Run a single-turn chat in CLI mode.")
     args = parser.parse_args()

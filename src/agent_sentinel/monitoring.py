@@ -14,7 +14,7 @@ except ImportError:  # pragma: no cover - keeps local test env usable before dep
 
     class _NoopMetric:
         def labels(self, **_: str) -> "_NoopMetric":
-            # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+            # 方法说明：在未安装 Prometheus 依赖时返回自身，让业务代码仍能照常调用 labels。
             return self
 
         def inc(self, _: float = 1.0) -> None:
@@ -45,7 +45,7 @@ except ImportError:  # pragma: no cover - keeps local test env usable before dep
             return None
 
     def generate_latest() -> bytes:  # type: ignore[no-redef]
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：在轻量环境里返回占位指标文本，避免 /metrics 接口直接崩溃。
         return b"# prometheus_client is not installed\n"
 
 
@@ -136,7 +136,7 @@ class Monitor:
         )
 
     def configure(self, *, enabled: bool) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：根据配置打开或关闭监控打点，关闭时业务流程仍继续运行。
         self.enabled = enabled
 
     @contextmanager
@@ -169,7 +169,7 @@ class Monitor:
             @functools.wraps(func)
             # 方法说明：记录可观测事件或监控指标，便于后续追踪。
             async def wrapper(state: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
-                # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+                # 方法说明：装饰异步节点函数，执行前后自动记录节点耗时和成功/失败次数。
                 with self.track_node(node_name, group_id_from_state(state)):
                     return await func(state, *args, **kwargs)
 
@@ -243,7 +243,7 @@ class Monitor:
             self.error_count_total.labels(error_type=_label(error_type)).inc()
 
     def render_latest(self) -> bytes:
-        # 方法说明：读取并返回当前流程需要的数据。
+        # 方法说明：生成 Prometheus 可抓取的最新指标文本。
         return generate_latest()
 
 
@@ -251,12 +251,12 @@ monitor = Monitor()
 
 
 def configure_monitoring(*, enabled: bool) -> None:
-    # 方法说明：初始化对象，并保存后续调用需要的状态。
+    # 方法说明：应用启动时统一设置监控开关，避免每个业务模块单独判断配置。
     monitor.configure(enabled=enabled)
 
 
 def group_id_from_state(state: dict[str, Any] | None) -> str:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：从诊断状态里提取群组 ID，用作 Prometheus 指标的低基数标签。
     if not isinstance(state, dict):
         return DEFAULT_GROUP_ID
     return _label(state.get("chat_id"))
@@ -264,14 +264,14 @@ def group_id_from_state(state: dict[str, Any] | None) -> str:
 
 def trace_id_from_parts(chat_id: str | None, message_id: str | None) -> str:
     # trace_id 用于日志串联单次诊断，刻意不进入 Prometheus label，避免高基数时间序列。
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：用群 ID 和消息 ID 拼出一次诊断的追踪编号，方便跨日志搜索。
     if chat_id and message_id:
         return f"{chat_id}_{message_id}"
     return chat_id or message_id or "unknown"
 
 
 def trace_id_from_state(state: dict[str, Any] | None) -> str:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：优先读取状态里已有的 trace_id，缺失时再根据群消息信息生成。
     if not isinstance(state, dict):
         return "unknown"
     existing = str(state.get("trace_id") or "").strip()
@@ -282,6 +282,6 @@ def trace_id_from_state(state: dict[str, Any] | None) -> str:
 
 def _label(value: object) -> str:
     # Prometheus label 不接受空值；统一归一化可以减少每个打点处的防御代码。
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：把空值统一转换成 unknown，保证每次打点都有合法标签。
     text = str(value or DEFAULT_GROUP_ID).strip()
     return text or DEFAULT_GROUP_ID

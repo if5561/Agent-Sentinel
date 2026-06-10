@@ -20,7 +20,7 @@ async def human_confirm_node(
     timeout_seconds: int = 300,
     enabled: bool = True,
 ) -> DiagnosisState:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：把模型生成的方案交给人确认；工作流会暂停，直到用户在飞书卡片上做选择。
     logger.info("Node human_confirm started enabled=%s", enabled)
     if not enabled or not state.get("need_human", True) or not state.get("chat_id"):
         logger.info("Node human_confirm auto-approved")
