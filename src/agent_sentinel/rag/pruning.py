@@ -45,7 +45,7 @@ STATIC_CATEGORY_KEYWORDS = {
 
 
 def jaccard_similarity(str1: str, str2: str) -> float:
-    # 方法说明：用词集合重叠度粗略衡量两段文本是否相似，作为元数据评分的轻量依据。
+    # 用词集合重叠度粗略衡量两段文本是否相似，作为元数据评分的轻量依据。
     left = set(_tokenize(str1))
     right = set(_tokenize(str2))
     union = left | right
@@ -55,7 +55,7 @@ def jaccard_similarity(str1: str, str2: str) -> float:
 
 
 def extract_query_features(query: str) -> dict[str, Any]:
-    # 方法说明：从告警文本中提取类别、级别、错误码和关键词，供静态知识排序时判断匹配度。
+    # 从告警文本中提取类别、级别、错误码和关键词，供静态知识排序时判断匹配度。
     normalized = _normalize_text(query)
     tokens = set(_tokenize(query))
     alert_categories: set[str] = set()
@@ -75,7 +75,7 @@ def extract_query_features(query: str) -> dict[str, Any]:
 
 
 def compute_history_metadata_score(metadata: dict, query: str) -> float:
-    # 方法说明：根据历史案例的校验结果、人工决策和告警摘要，计算它是否值得被复用。
+    # 根据历史案例的校验结果、人工决策和告警摘要，计算它是否值得被复用。
     if not isinstance(metadata, dict):
         return 0.0
 
@@ -102,7 +102,7 @@ def compute_history_metadata_score(metadata: dict, query: str) -> float:
 
 
 def compute_static_metadata_score(metadata: dict, query_features: dict) -> float:
-    # 方法说明：根据静态文档的故障类型、级别、错误码和关键词，计算它与当前告警的匹配程度。
+    # 根据静态文档的故障类型、级别、错误码和关键词，计算它与当前告警的匹配程度。
     if not isinstance(metadata, dict):
         metadata = {}
 
@@ -159,7 +159,7 @@ class Reranker:
         api_format: str = "auto",
         timeout_seconds: int = 15,
     ) -> None:
-        # 方法说明：保存 reranker 的模型、设备和远程 API 配置，本地模型会在首次重排时再加载。
+        # 保存 reranker 的模型、设备和远程 API 配置，本地模型会在首次重排时再加载。
         self.model_name = model_name
         self.device = device
         self.api_endpoint = api_endpoint
@@ -172,7 +172,7 @@ class Reranker:
 
     def rerank(self, query: str, documents: List[str]) -> List[float]:
         """Return one relevance score for each document in the same order."""
-        # 方法说明：对候选文档重新打分，让更贴近当前告警的问题排到前面。
+        # 对候选文档重新打分，让更贴近当前告警的问题排到前面。
         if not documents:
             return []
         logger.info(
@@ -188,7 +188,7 @@ class Reranker:
         return self._rerank_local(query, documents)
 
     def _rerank_api(self, query: str, documents: list[str]) -> list[float]:
-        # 方法说明：调用外部 reranker API 给候选文档打分，适合线上环境复用远程模型能力。
+        # 调用外部 reranker API 给候选文档打分，适合线上环境复用远程模型能力。
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -241,7 +241,7 @@ class Reranker:
         return scores
 
     def _build_api_payload(self, query: str, documents: list[str]) -> dict[str, Any]:
-        # 方法说明：按不同 reranker 服务的协议组装请求体，保证同一批候选文档能被统一评分。
+        # 按不同 reranker 服务的协议组装请求体，保证同一批候选文档能被统一评分。
         mode = self._api_payload_mode()
         if mode == "dashscope_vl":
             return {
@@ -266,7 +266,7 @@ class Reranker:
         return {"model": self.model_name, "query": query, "documents": documents}
 
     def _parse_dashscope_response(self, payload: dict[str, Any], document_count: int) -> list[float]:
-        # 方法说明：解析 DashScope reranker 返回结果，并按原始文档顺序还原每条文档的分数。
+        # 解析 DashScope reranker 返回结果，并按原始文档顺序还原每条文档的分数。
         output = payload.get("output") if isinstance(payload.get("output"), dict) else {}
         results = output.get("results") if isinstance(output, dict) else None
         if results is None:
@@ -288,7 +288,7 @@ class Reranker:
         return scores
 
     def _api_payload_mode(self) -> str:
-        # 方法说明：根据配置和接口地址判断应该使用哪种 reranker 请求格式。
+        # 根据配置和接口地址判断应该使用哪种 reranker 请求格式。
         api_format = str(self.api_format or "auto").strip().lower()
         if api_format in {"dashscope_vl", "dashscope-vl", "dashscope_multimodal", "dashscope-multimodal"}:
             return "dashscope_vl"
@@ -303,11 +303,11 @@ class Reranker:
         return "generic"
 
     def api_mode(self) -> str:
-        # 方法说明：返回当前 reranker 使用远程 API 还是本地模型，主要用于日志排查。
+        # 返回当前 reranker 使用远程 API 还是本地模型，主要用于日志排查。
         return self._api_payload_mode() if self.api_endpoint else "local"
 
     def _rerank_local(self, query: str, documents: list[str]) -> list[float]:
-        # 方法说明：用本地 transformers 模型给候选文档打分，适合没有远程 reranker 的环境。
+        # 用本地 transformers 模型给候选文档打分，适合没有远程 reranker 的环境。
         started = time.perf_counter()
         self._ensure_local_model()
         tokenizer = self._tokenizer
@@ -341,7 +341,7 @@ class Reranker:
         return normalized
 
     def _ensure_local_model(self) -> None:
-        # 方法说明：首次本地重排时才加载 tokenizer 和模型，避免启动阶段占用大量内存。
+        # 首次本地重排时才加载 tokenizer 和模型，避免启动阶段占用大量内存。
         if self._model is not None and self._tokenizer is not None and self._torch is not None:
             return
         try:
@@ -361,7 +361,7 @@ def prune_by_differential_strategy(
     top_k: int,
     config: Dict | None = None,
 ) -> List[Dict]:
-    # 方法说明：根据候选来源选择不同裁剪策略，历史案例重业务元数据，静态文档优先走 reranker。
+    # 根据候选来源选择不同裁剪策略，历史案例重业务元数据，静态文档优先走 reranker。
     if not candidates or len(candidates) <= top_k:
         logger.info("RAG pruning skipped source_type=%s candidates=%s top_k=%s", candidates[0].get("source_type") if candidates else None, len(candidates), top_k)
         return candidates
@@ -379,7 +379,7 @@ def prune_by_differential_strategy(
 
 
 def _prune_history(query: str, candidates: list[dict], top_k: int, config: dict[str, Any]) -> list[dict]:
-    # 方法说明：裁剪历史案例候选，把向量相似度和案例质量元数据合成一个最终排序分。
+    # 裁剪历史案例候选，把向量相似度和案例质量元数据合成一个最终排序分。
     started = time.perf_counter()
     alpha = float(config.get("alpha_history", 0.6))
     ranked: list[dict] = []
@@ -408,7 +408,7 @@ def _prune_history(query: str, candidates: list[dict], top_k: int, config: dict[
 
 
 def _prune_static(query: str, candidates: list[dict], top_k: int, config: dict[str, Any]) -> list[dict]:
-    # 方法说明：裁剪静态知识文档，优先用 reranker 判断哪些文档最值得放进提示词。
+    # 裁剪静态知识文档，优先用 reranker 判断哪些文档最值得放进提示词。
     started = time.perf_counter()
     documents = [str(candidate.get("text") or "") for candidate in candidates]
     reranker = Reranker(
@@ -442,7 +442,7 @@ def _prune_static(query: str, candidates: list[dict], top_k: int, config: dict[s
 
 
 def _prune_static_fallback(query: str, candidates: list[dict], top_k: int, config: dict[str, Any]) -> list[dict]:
-    # 方法说明：reranker 不可用时，用向量分和文档元数据分做保守排序。
+    # reranker 不可用时，用向量分和文档元数据分做保守排序。
     started = time.perf_counter()
     alpha = float(config.get("alpha_static_fallback", 0.7))
     query_features = extract_query_features(query)
@@ -472,18 +472,18 @@ def _prune_static_fallback(query: str, candidates: list[dict], top_k: int, confi
 
 
 def _normalize_text(text: str) -> str:
-    # 方法说明：把文本统一成小写并去掉标点，方便后续关键词匹配和分词。
+    # 把文本统一成小写并去掉标点，方便后续关键词匹配和分词。
     return re.sub(r"[^\w\s]", " ", str(text).lower()).strip()
 
 
 def _tokenize(text: str) -> list[str]:
-    # 方法说明：从归一化文本中提取词语列表，用于相似度和关键词命中计算。
+    # 从归一化文本中提取词语列表，用于相似度和关键词命中计算。
     normalized = _normalize_text(text)
     return re.findall(r"\w+", normalized)
 
 
 def _as_list(value: Any) -> list[Any]:
-    # 方法说明：把单个值、元组、集合等统一转成列表，方便按多值字段处理。
+    # 把单个值、元组、集合等统一转成列表，方便按多值字段处理。
     if value is None:
         return []
     if isinstance(value, list):
@@ -494,7 +494,7 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _bounded_score(value: Any) -> float:
-    # 方法说明：把任意分数压到 0 到 1 之间，避免异常值影响排序。
+    # 把任意分数压到 0 到 1 之间，避免异常值影响排序。
     try:
         score = float(value)
     except (TypeError, ValueError):
@@ -505,23 +505,23 @@ def _bounded_score(value: Any) -> float:
 
 
 def _score_from_result(item: dict[str, Any]) -> Any:
-    # 方法说明：兼容不同 reranker 返回字段名，提取候选文档的相关性分数。
+    # 兼容不同 reranker 返回字段名，提取候选文档的相关性分数。
     return item.get("relevance_score", item.get("score", item.get("rerank_score", 0.0)))
 
 
 def _is_dashscope_endpoint(endpoint: str) -> bool:
-    # 方法说明：判断 reranker 地址是否是 DashScope 原生接口，用来选择请求和鉴权方式。
+    # 判断 reranker 地址是否是 DashScope 原生接口，用来选择请求和鉴权方式。
     normalized = endpoint.lower()
     return "dashscope" in normalized or "/services/rerank/" in normalized
 
 
 def _is_dashscope_compatible_endpoint(endpoint: str) -> bool:
-    # 方法说明：判断 reranker 地址是否是 DashScope 兼容模式接口。
+    # 判断 reranker 地址是否是 DashScope 兼容模式接口。
     return "/compatible-api/" in endpoint.lower() or "/compatible-mode/" in endpoint.lower()
 
 
 def _endpoint_host(endpoint: str) -> str:
-    # 方法说明：从完整接口地址中提取主机名，日志里只展示主机可减少噪声。
+    # 从完整接口地址中提取主机名，日志里只展示主机可减少噪声。
     try:
         return urlparse(endpoint).netloc or endpoint
     except Exception:
@@ -529,7 +529,7 @@ def _endpoint_host(endpoint: str) -> str:
 
 
 def _format_scores(scores: list[float], limit: int = 5) -> str:
-    # 方法说明：把前几名分数格式化成短字符串，方便日志观察排序效果。
+    # 把前几名分数格式化成短字符串，方便日志观察排序效果。
     if not scores:
         return "[]"
     suffix = ", ..." if len(scores) > limit else ""
@@ -537,7 +537,7 @@ def _format_scores(scores: list[float], limit: int = 5) -> str:
 
 
 def _format_candidate_scores(candidates: list[dict], score_key: str, limit: int = 5) -> str:
-    # 方法说明：把候选文档的索引和分数格式化到日志，方便定位哪条资料被选中。
+    # 把候选文档的索引和分数格式化到日志，方便定位哪条资料被选中。
     if not candidates:
         return "[]"
     values = []
@@ -548,7 +548,7 @@ def _format_candidate_scores(candidates: list[dict], score_key: str, limit: int 
 
 
 def _normalize_scores(scores: list[float]) -> list[float]:
-    # 方法说明：把本地模型输出的原始分数归一化，保证排序阶段使用稳定的 0 到 1 分数。
+    # 把本地模型输出的原始分数归一化，保证排序阶段使用稳定的 0 到 1 分数。
     if not scores:
         return []
     bounded = [_bounded_score(score) for score in scores]

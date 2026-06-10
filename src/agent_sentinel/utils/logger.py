@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def configure_logger(log_level: str = "INFO") -> None:
-    # 方法说明：初始化全局日志格式和级别，让控制台日志保持统一可读。
+    # 初始化全局日志格式和级别，让控制台日志保持统一可读。
     level = getattr(logging, log_level.upper(), logging.INFO)
     logging.basicConfig(
         level=level,
@@ -16,7 +16,7 @@ def configure_logger(log_level: str = "INFO") -> None:
 
 
 def _configure_plain_json_logger(level: int) -> None:
-    # 方法说明：单独配置节点事件 JSON 日志，方便后续被文件采集器或测试用例读取。
+    # 单独配置节点事件 JSON 日志，方便后续被文件采集器或测试用例读取。
     logger = logging.getLogger("agent_sentinel.node_event_json")
     logger.setLevel(level)
     logger.propagate = False

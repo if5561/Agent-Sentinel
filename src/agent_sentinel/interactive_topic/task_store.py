@@ -31,14 +31,14 @@ class TopicTaskStore:
     """Thread-safe in-memory task pool for card decisions and timeouts."""
 
     def __init__(self, wait_seconds: int) -> None:
-        # 方法说明：准备线程安全的任务池，保存每个飞书话题正在等待哪个节点确认。
+        # 准备线程安全的任务池，保存每个飞书话题正在等待哪个节点确认。
         self.wait_seconds = wait_seconds
         self._tasks: dict[str, TopicTask] = {}
         self._source_index: dict[tuple[str, str], str] = {}
         self._lock = threading.RLock()
 
     def create_task(self, task_id: str, chat_id: str, root_message_id: str, query: str) -> TopicTask:
-        # 方法说明：为一次飞书话题诊断创建任务；同一会话同一根消息重复进入时复用旧任务。
+        # 为一次飞书话题诊断创建任务；同一会话同一根消息重复进入时复用旧任务。
         with self._lock:
             source_key = self._source_key(chat_id, root_message_id)
             existing_task = self._task_by_source_key_locked(source_key)
@@ -63,7 +63,7 @@ class TopicTaskStore:
             return replace(task, timeout_timer=None)
 
     def set_card_message_id(self, task_id: str, card_message_id: str | None) -> TopicTask | None:
-        # 方法说明：记录当前任务对应的飞书卡片消息 ID，后续节点可以更新同一张卡片。
+        # 记录当前任务对应的飞书卡片消息 ID，后续节点可以更新同一张卡片。
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -81,7 +81,7 @@ class TopicTaskStore:
         node_result: str | None = None,
         diagnosis_state: dict[str, Any] | None = None,
     ) -> TopicTask | None:
-        # 方法说明：把任务切到“等待用户确认”状态，并启动超时计时器防止流程永久挂起。
+        # 把任务切到“等待用户确认”状态，并启动超时计时器防止流程永久挂起。
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -114,7 +114,7 @@ class TopicTaskStore:
         *,
         source: str,
     ) -> TopicTask | None:
-        # 方法说明：接收用户对当前节点的“继续/重试”选择，只接受仍在等待中的最新节点。
+        # 接收用户对当前节点的“继续/重试”选择，只接受仍在等待中的最新节点。
         normalized_action = "retry" if action == "retry" else "next"
         with self._lock:
             task = self._tasks.get(task_id)
@@ -153,7 +153,7 @@ class TopicTaskStore:
             return replace(task, timeout_timer=None)
 
     def mark_feedback_waiting(self, task_id: str, card_message_id: str | None) -> TopicTask | None:
-        # 方法说明：诊断结束后把任务切到反馈等待状态，等待用户评价结果是否有效。
+        # 诊断结束后把任务切到反馈等待状态，等待用户评价结果是否有效。
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -168,7 +168,7 @@ class TopicTaskStore:
             return replace(task, timeout_timer=None)
 
     def confirm_feedback(self, task_id: str, action: str, *, source: str) -> TopicTask | None:
-        # 方法说明：记录用户对最终结果的反馈，并忽略重复或过期的反馈点击。
+        # 记录用户对最终结果的反馈，并忽略重复或过期的反馈点击。
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -189,7 +189,7 @@ class TopicTaskStore:
             return replace(task, timeout_timer=None)
 
     def reset_feedback_waiting(self, task_id: str) -> TopicTask | None:
-        # 方法说明：反馈处理失败或需要重试时，把任务重新放回等待反馈状态。
+        # 反馈处理失败或需要重试时，把任务重新放回等待反馈状态。
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -201,7 +201,7 @@ class TopicTaskStore:
             return replace(task, timeout_timer=None)
 
     def get_task(self, task_id: str) -> TopicTask | None:
-        # 方法说明：按任务 ID 查询任务快照，返回副本以免外部直接改内部状态。
+        # 按任务 ID 查询任务快照，返回副本以免外部直接改内部状态。
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -209,7 +209,7 @@ class TopicTaskStore:
             return replace(task, timeout_timer=None)
 
     def get_task_by_source(self, chat_id: str, root_message_id: str) -> TopicTask | None:
-        # 方法说明：按飞书会话和根消息查找任务，用来识别同一话题是否已经在运行。
+        # 按飞书会话和根消息查找任务，用来识别同一话题是否已经在运行。
         with self._lock:
             task = self._task_by_source_key_locked(self._source_key(chat_id, root_message_id))
             if task is None:
@@ -217,7 +217,7 @@ class TopicTaskStore:
             return replace(task, timeout_timer=None)
 
     def finish_task(self, task_id: str) -> None:
-        # 方法说明：任务完成后清理任务池、来源索引和定时器，释放这次话题占用的状态。
+        # 任务完成后清理任务池、来源索引和定时器，释放这次话题占用的状态。
         with self._lock:
             task = self._tasks.pop(task_id, None)
             if task is not None:
@@ -226,7 +226,7 @@ class TopicTaskStore:
                 logger.info("Interactive topic task finished task_id=%s", task_id)
 
     def _task_by_source_key_locked(self, source_key: tuple[str, str]) -> TopicTask | None:
-        # 方法说明：在持锁状态下通过来源索引找任务，并顺手清理已经失效的索引。
+        # 在持锁状态下通过来源索引找任务，并顺手清理已经失效的索引。
         task_id = self._source_index.get(source_key)
         if not task_id:
             return None
@@ -237,11 +237,11 @@ class TopicTaskStore:
         return task
 
     def _source_key(self, chat_id: str, root_message_id: str) -> tuple[str, str]:
-        # 方法说明：把会话 ID 和根消息 ID 标准化成任务来源键，用于判断重复话题。
+        # 把会话 ID 和根消息 ID 标准化成任务来源键，用于判断重复话题。
         return (str(chat_id or "").strip(), str(root_message_id or "").strip())
 
     def _cancel_timer_locked(self, task: TopicTask) -> None:
-        # 方法说明：取消任务上一次等待动作的超时计时器，避免用户已确认后又触发超时逻辑。
+        # 取消任务上一次等待动作的超时计时器，避免用户已确认后又触发超时逻辑。
         timer = task.timeout_timer
         task.timeout_timer = None
         if timer is None:

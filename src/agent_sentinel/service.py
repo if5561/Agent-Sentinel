@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class SingleTurnChatService:
     def __init__(self, settings: Settings) -> None:
-        # 方法说明：创建普通聊天链路，主要用于简单问答或验证模型配置。
+        # 创建普通聊天链路，主要用于简单问答或验证模型配置。
         self.settings = settings
         self.model = build_chat_model(settings)
         self.prompt = ChatPromptTemplate.from_messages(
@@ -32,7 +32,7 @@ class SingleTurnChatService:
         self.chain = self.prompt | self.model | StrOutputParser()
 
     def reply_once(self, user_input: str) -> str:
-        # 方法说明：把用户输入交给普通聊天链路，并记录模型调用耗时和 token 估算。
+        # 把用户输入交给普通聊天链路，并记录模型调用耗时和 token 估算。
         payload = {"user_input": user_input}
         prompt_text = self.prompt.invoke(payload).to_string()
         return _invoke_chain_with_monitoring(
@@ -46,7 +46,7 @@ class SingleTurnChatService:
 
 class AlertAnalysisService:
     def __init__(self, settings: Settings) -> None:
-        # 方法说明：创建旧版单步告警分析链路，用固定提示词直接生成简短分析。
+        # 创建旧版单步告警分析链路，用固定提示词直接生成简短分析。
         self.settings = settings
         self.model = build_chat_model(settings)
         self.prompt = ChatPromptTemplate.from_messages(
@@ -87,7 +87,7 @@ class AlertAnalysisService:
         trigger_type: str = "unknown",
         tags: list[str] | None = None,
     ) -> str:
-        # 方法说明：把告警字段填入提示词，调用模型生成一段结构化中文分析。
+        # 把告警字段填入提示词，调用模型生成一段结构化中文分析。
         payload = {
             "source": source,
             "level": level,
@@ -108,7 +108,7 @@ class AlertAnalysisService:
 
 
 def _invoke_chain_with_monitoring(chain: object, payload: dict[str, str], *, model: str, prompt_text: str, operation: str) -> str:
-    # 方法说明：统一执行 LangChain 调用，并把耗时、错误和 token 估算写入监控。
+    # 统一执行 LangChain 调用，并把耗时、错误和 token 估算写入监控。
     started = time.perf_counter()
     try:
         result = chain.invoke(payload)  # type: ignore[attr-defined]

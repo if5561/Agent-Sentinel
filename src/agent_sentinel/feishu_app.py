@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class FeishuBotClient:
     def __init__(self, settings: Settings, timeout: int = 15) -> None:
-        # 方法说明：保存飞书应用配置，并准备 token 缓存和锁，减少重复鉴权请求。
+        # 保存飞书应用配置，并准备 token 缓存和锁，减少重复鉴权请求。
         self.settings = settings
         self.timeout = timeout
         self._token: str | None = None
@@ -25,7 +25,7 @@ class FeishuBotClient:
         self._lock = threading.Lock()
 
     def is_configured(self) -> bool:
-        # 方法说明：检查飞书应用 ID 和密钥是否齐全，决定飞书能力能不能真正启用。
+        # 检查飞书应用 ID 和密钥是否齐全，决定飞书能力能不能真正启用。
         return bool(self.settings.feishu_app_id and self.settings.feishu_app_secret)
 
     def send_text_to_chat(
@@ -37,7 +37,7 @@ class FeishuBotClient:
         mention_open_id: str | None = None,
         mention_name: str | None = None,
     ) -> bool:
-        # 方法说明：向飞书发送文本消息；有话题根消息时回复到原话题，否则发普通群消息。
+        # 向飞书发送文本消息；有话题根消息时回复到原话题，否则发普通群消息。
         self._ensure_configured()
         token = self._get_tenant_access_token()
         base_url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages"
@@ -102,7 +102,7 @@ class FeishuBotClient:
         *,
         thread_root_message_id: str | None = None,
     ) -> bool:
-        # 方法说明：向飞书发送交互卡片，用于承载诊断确认、案例选择等需要点击的动作。
+        # 向飞书发送交互卡片，用于承载诊断确认、案例选择等需要点击的动作。
         self._ensure_configured()
         token = self._get_tenant_access_token()
         base_url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages"
@@ -147,7 +147,7 @@ class FeishuBotClient:
 
     def send_topic_text(self, chat_id: str, root_message_id: str, text: str) -> str | None:
         """Reply in the source message thread and return the new Feishu message_id."""
-        # 方法说明：在原始消息话题下回复文本，并返回新消息 ID，方便后续继续更新同一话题。
+        # 在原始消息话题下回复文本，并返回新消息 ID，方便后续继续更新同一话题。
         self._ensure_configured()
         token = self._get_tenant_access_token()
         url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages/{root_message_id}/reply"
@@ -185,7 +185,7 @@ class FeishuBotClient:
 
     def send_topic_card(self, chat_id: str, root_message_id: str, card: dict[str, object]) -> str | None:
         """Send an interactive card in the source message thread and return message_id."""
-        # 方法说明：在原始消息话题下发送交互卡片，并返回卡片消息 ID 供后续 PATCH 更新。
+        # 在原始消息话题下发送交互卡片，并返回卡片消息 ID 供后续 PATCH 更新。
         self._ensure_configured()
         token = self._get_tenant_access_token()
         url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages/{root_message_id}/reply"
@@ -223,7 +223,7 @@ class FeishuBotClient:
 
     def update_message_card(self, message_id: str, card: dict[str, object]) -> bool:
         """Best-effort update for a bot-sent interactive card."""
-        # 方法说明：同步更新已经发送过的飞书卡片，让同一张卡片展示最新节点进度。
+        # 同步更新已经发送过的飞书卡片，让同一张卡片展示最新节点进度。
         self._ensure_configured()
         token = self._get_tenant_access_token()
         # PATCH 原卡片消息是单卡片交互的关键，避免每个节点都发送一张新卡片。
@@ -250,7 +250,7 @@ class FeishuBotClient:
 
     async def update_message_card_async(self, message_id: str, card: dict[str, object]) -> bool:
         """Async PATCH update for a bot-sent interactive card."""
-        # 方法说明：异步更新已经发送过的飞书卡片，避免等待网络请求时阻塞工作流。
+        # 异步更新已经发送过的飞书卡片，避免等待网络请求时阻塞工作流。
         self._ensure_configured()
         token = await asyncio.to_thread(self._get_tenant_access_token)
         url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages/{message_id}"
@@ -282,7 +282,7 @@ class FeishuBotClient:
         page_size: int = 20,
         sort_type: str = "ByCreateTimeDesc",
     ) -> list[dict[str, object]]:
-        # 方法说明：拉取某个飞书会话的最近消息，供轮询模式发现用户新输入。
+        # 拉取某个飞书会话的最近消息，供轮询模式发现用户新输入。
         self._ensure_configured()
         token = self._get_tenant_access_token()
         url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages"
@@ -310,12 +310,12 @@ class FeishuBotClient:
         return [item for item in items if isinstance(item, dict)]
 
     def _ensure_configured(self) -> None:
-        # 方法说明：在真正调用飞书接口前做配置保护，缺少凭证时直接抛出清晰错误。
+        # 在真正调用飞书接口前做配置保护，缺少凭证时直接抛出清晰错误。
         if not self.is_configured():
             raise RuntimeError("FEISHU_APP_ID or FEISHU_APP_SECRET is not configured.")
 
     def _get_tenant_access_token(self) -> str:
-        # 方法说明：获取并缓存飞书租户访问令牌，过期前自动刷新，减少每次发消息的鉴权成本。
+        # 获取并缓存飞书租户访问令牌，过期前自动刷新，减少每次发消息的鉴权成本。
         now = time.time()
         with self._lock:
             if self._token and now < self._token_expire_at:
@@ -357,7 +357,7 @@ class FeishuBotClient:
 
 
 def extract_text_from_message_content(content: str | None) -> str:
-    # 方法说明：从飞书消息 content 字段里提取可读文本，解析失败时保留原始内容兜底。
+    # 从飞书消息 content 字段里提取可读文本，解析失败时保留原始内容兜底。
     if not content:
         return ""
     try:

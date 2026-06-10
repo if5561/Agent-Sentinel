@@ -30,14 +30,14 @@ class MCPStdioClient:
     """Minimal MCP JSON-RPC client for stdio servers."""
 
     def __init__(self, config: MCPToolConfig) -> None:
-        # 方法说明：保存 MCP 子进程启动配置，并准备请求编号、进程句柄和串行调用锁。
+        # 保存 MCP 子进程启动配置，并准备请求编号、进程句柄和串行调用锁。
         self._config = config
         self._request_id = 0
         self._process: asyncio.subprocess.Process | None = None
         self._lock = asyncio.Lock()
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        # 方法说明：通过 MCP 协议调用指定工具，例如查询 Prometheus 指标或 SLS 日志。
+        # 通过 MCP 协议调用指定工具，例如查询 Prometheus 指标或 SLS 日志。
         async with self._lock:
             await self._ensure_started()
             return await self._request(
@@ -49,7 +49,7 @@ class MCPStdioClient:
             )
 
     async def close(self) -> None:
-        # 方法说明：关闭 MCP 子进程，服务退出或连接失效时释放底层进程资源。
+        # 关闭 MCP 子进程，服务退出或连接失效时释放底层进程资源。
         process = self._process
         self._process = None
         if process is None or process.returncode is not None:
@@ -62,7 +62,7 @@ class MCPStdioClient:
             await process.wait()
 
     async def _ensure_started(self) -> None:
-        # 方法说明：确保 MCP Server 子进程已启动，并完成 JSON-RPC 初始化握手。
+        # 确保 MCP Server 子进程已启动，并完成 JSON-RPC 初始化握手。
         if self._process is not None and self._process.returncode is None:
             return
         if not self._config.command:
@@ -85,13 +85,13 @@ class MCPStdioClient:
         await self._notify("notifications/initialized", {})
 
     async def _notify(self, method: str, params: dict[str, Any]) -> None:
-        # 方法说明：向 MCP Server 发送无需响应的通知，例如 initialized。
+        # 向 MCP Server 发送无需响应的通知，例如 initialized。
         process = self._active_process()
         payload = {"jsonrpc": "2.0", "method": method, "params": params}
         await self._write_message(process, payload)
 
     async def _request(self, method: str, params: dict[str, Any]) -> Any:
-        # 方法说明：发送一条 JSON-RPC 请求，并等待匹配 request_id 的响应。
+        # 发送一条 JSON-RPC 请求，并等待匹配 request_id 的响应。
         process = self._active_process()
         self._request_id += 1
         request_id = self._request_id
@@ -113,7 +113,7 @@ class MCPStdioClient:
             return response.get("result")
 
     def _active_process(self) -> asyncio.subprocess.Process:
-        # 方法说明：取得当前可用的 MCP 子进程；进程不存在或 stdio 不可用时直接报错。
+        # 取得当前可用的 MCP 子进程；进程不存在或 stdio 不可用时直接报错。
         process = self._process
         if process is None or process.returncode is not None:
             raise MCPClientError("MCP server is not running")
@@ -122,7 +122,7 @@ class MCPStdioClient:
         return process
 
     async def _write_message(self, process: asyncio.subprocess.Process, payload: dict[str, Any]) -> None:
-        # 方法说明：按 MCP stdio 协议写入带 Content-Length 头的 JSON 消息。
+        # 按 MCP stdio 协议写入带 Content-Length 头的 JSON 消息。
         if process.stdin is None:
             raise MCPClientError("MCP server stdin is unavailable")
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -131,7 +131,7 @@ class MCPStdioClient:
         await process.stdin.drain()
 
     async def _read_message(self, process: asyncio.subprocess.Process) -> dict[str, Any]:
-        # 方法说明：从 MCP stdout 读取一条完整 JSON 消息，先读头部再按长度读正文。
+        # 从 MCP stdout 读取一条完整 JSON 消息，先读头部再按长度读正文。
         if process.stdout is None:
             raise MCPClientError("MCP server stdout is unavailable")
         headers: dict[str, str] = {}
@@ -153,12 +153,12 @@ class MCPStdioClient:
 
 class MCPLogsProvider:
     def __init__(self, client: MCPStdioClient, config: MCPToolConfig) -> None:
-        # 方法说明：绑定 MCP 客户端和日志工具名，后续日志查询会通过 MCP Server 转发。
+        # 绑定 MCP 客户端和日志工具名，后续日志查询会通过 MCP Server 转发。
         self._client = client
         self._config = config
 
     async def query_logs(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-        # 方法说明：通过 MCP Server 调用日志工具，把告警摘要转换成 SLS 查询结果。
+        # 通过 MCP Server 调用日志工具，把告警摘要转换成 SLS 查询结果。
         logger.info("Querying MCP SLS logs summary_chars=%s group_id=%s", len(alert_summary), group_id)
         result = await self._client.call_tool(
             self._config.sls_tool,
@@ -185,12 +185,12 @@ class MCPLogsProvider:
 
 class MCPMetricsProvider:
     def __init__(self, client: MCPStdioClient, config: MCPToolConfig) -> None:
-        # 方法说明：绑定 MCP 客户端和 Prometheus 工具名，后续指标查询会通过 MCP Server 转发。
+        # 绑定 MCP 客户端和 Prometheus 工具名，后续指标查询会通过 MCP Server 转发。
         self._client = client
         self._config = config
 
     async def get_metrics(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-        # 方法说明：通过 MCP Server 调用 Prometheus 工具，获取和告警相关的指标数据。
+        # 通过 MCP Server 调用 Prometheus 工具，获取和告警相关的指标数据。
         logger.info("Querying MCP Prometheus metrics summary_chars=%s group_id=%s", len(alert_summary), group_id)
         result = await self._client.call_tool(
             self._config.prometheus_tool,
@@ -217,7 +217,7 @@ class MCPMetricsProvider:
 
 class MCPToolsProvider:
     def __init__(self, config: MCPToolConfig, client: MCPStdioClient | None = None) -> None:
-        # 方法说明：组装 MCP 指标、MCP 日志和 mock 拓扑 provider，形成完整工具接口。
+        # 组装 MCP 指标、MCP 日志和 mock 拓扑 provider，形成完整工具接口。
         self._config = config
         self._client = client or MCPStdioClient(config)
         self._metrics = MCPMetricsProvider(self._client, config)
@@ -226,21 +226,21 @@ class MCPToolsProvider:
 
     @property
     def metrics(self) -> MCPMetricsProvider:
-        # 方法说明：返回 MCP 指标 provider，供上层统一调用 get_metrics。
+        # 返回 MCP 指标 provider，供上层统一调用 get_metrics。
         return self._metrics
 
     @property
     def logs(self) -> MCPLogsProvider:
-        # 方法说明：返回 MCP 日志 provider，供上层统一调用 query_logs。
+        # 返回 MCP 日志 provider，供上层统一调用 query_logs。
         return self._logs
 
     @property
     def topology(self) -> MockTopologyProvider:
-        # 方法说明：当前 MCP 组合里拓扑仍用 mock provider 补位，保持接口完整。
+        # 当前 MCP 组合里拓扑仍用 mock provider 补位，保持接口完整。
         return self._topology
 
     async def fetch_all(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-        # 方法说明：并发通过 MCP 查询指标和日志，同时用 mock 拓扑补齐完整现场数据结构。
+        # 并发通过 MCP 查询指标和日志，同时用 mock 拓扑补齐完整现场数据结构。
         metrics, logs, topology = await asyncio.gather(
             self._metrics.get_metrics(alert_summary, group_id),
             self._logs.query_logs(alert_summary, group_id),
@@ -250,7 +250,7 @@ class MCPToolsProvider:
 
 
 def _extract_tool_payload(result: Any) -> Any:
-    # 方法说明：从 MCP 工具返回的 content 数组里提取真正的 JSON 或文本结果。
+    # 从 MCP 工具返回的 content 数组里提取真正的 JSON 或文本结果。
     if not isinstance(result, dict):
         return result
     content = result.get("content")

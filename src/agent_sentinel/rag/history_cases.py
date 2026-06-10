@@ -30,7 +30,7 @@ class HistoryCaseStore:
         top_k: int = 2,
         threshold: float | None = None,
     ) -> list[RetrievedDoc]:
-        # 方法说明：在历史案例库中查找与当前告警足够相似的已验证案例，用于快速复用处理方案。
+        # 在历史案例库中查找与当前告警足够相似的已验证案例，用于快速复用处理方案。
         if not alert_text.strip():
             logger.info("History case search skipped empty alert_text")
             return []
@@ -66,7 +66,7 @@ class HistoryCaseStore:
         return filtered
 
     async def save_case_to_history(self, state: DiagnosisState) -> str:
-        # 方法说明：把一次被确认有效的诊断结果保存成历史案例，后续相似告警可直接参考。
+        # 把一次被确认有效的诊断结果保存成历史案例，后续相似告警可直接参考。
         started = time.perf_counter()
         alert_text = build_alert_text(state.get("raw_alert", {}))
         if not alert_text.strip():
@@ -122,7 +122,7 @@ class HistoryCaseStore:
 
 
 def build_history_case_store(settings: Settings) -> HistoryCaseStore | None:
-    # 方法说明：根据配置创建历史案例存储；未启用 Milvus 时返回空值表示跳过案例缓存。
+    # 根据配置创建历史案例存储；未启用 Milvus 时返回空值表示跳过案例缓存。
     if settings.rag_provider.strip().lower() != "milvus" or not settings.milvus_uri:
         # 只有启用 Milvus 且配置 URI 时才创建历史案例存储，mock 模式下直接跳过缓存复用。
         return None
@@ -152,7 +152,7 @@ def build_history_case_store(settings: Settings) -> HistoryCaseStore | None:
 
 def build_alert_text(raw_alert: dict[str, Any]) -> str:
     # 用摘要、详情、原文拼接成相似案例检索文本，尽量保留告警上下文而不是只用标题。
-    # 方法说明：把告警摘要、详情和原文拼成检索文本，用来和历史案例做相似度匹配。
+    # 把告警摘要、详情和原文拼成检索文本，用来和历史案例做相似度匹配。
     parts = [
         str(raw_alert.get("summary") or ""),
         str(raw_alert.get("details") or ""),
@@ -164,7 +164,7 @@ def build_alert_text(raw_alert: dict[str, Any]) -> str:
 
 
 def final_plan_from_case(doc: RetrievedDoc) -> dict[str, Any]:
-    # 方法说明：从历史案例 metadata 中恢复可复用方案，兼容不同版本保存过的字段名。
+    # 从历史案例 metadata 中恢复可复用方案，兼容不同版本保存过的字段名。
     metadata = doc.metadata or {}
     # 历史数据可能来自不同版本 schema，这里兼容多种字段名恢复可复用方案。
     plan = metadata.get("recommended_plan") or metadata.get("final_plan") or metadata.get("final_result")
@@ -179,7 +179,7 @@ def final_plan_from_case(doc: RetrievedDoc) -> dict[str, Any]:
 
 
 def case_to_dict(doc: RetrievedDoc) -> dict[str, Any]:
-    # 方法说明：把检索到的历史案例转换成飞书卡片和工作流状态都容易消费的字典。
+    # 把检索到的历史案例转换成飞书卡片和工作流状态都容易消费的字典。
     return {
         "id": doc.id,
         "title": doc.title or "",
@@ -192,7 +192,7 @@ def case_to_dict(doc: RetrievedDoc) -> dict[str, Any]:
 
 
 def _extract_tags(state: DiagnosisState) -> list[str]:
-    # 方法说明：从告警标签和证据文本中提取案例标签，便于后续检索和筛选。
+    # 从告警标签和证据文本中提取案例标签，便于后续检索和筛选。
     raw_alert = state.get("raw_alert", {})
     tags = [str(tag).strip() for tag in raw_alert.get("tags", []) if str(tag).strip()]
     for item in state.get("evidence", []):
@@ -203,7 +203,7 @@ def _extract_tags(state: DiagnosisState) -> list[str]:
 
 
 def _truncate_utf8(value: str, max_bytes: int) -> str:
-    # 方法说明：按 UTF-8 字节数安全截断字符串，避免中文写入 Milvus 时超出字段限制。
+    # 按 UTF-8 字节数安全截断字符串，避免中文写入 Milvus 时超出字段限制。
     data = value.encode("utf-8")
     if len(data) <= max_bytes:
         return value
@@ -211,7 +211,7 @@ def _truncate_utf8(value: str, max_bytes: int) -> str:
 
 
 def _metadata_json(metadata: dict[str, Any]) -> str:
-    # 方法说明：把案例元数据压缩成 Milvus 可存储的 JSON，超长时保留关键诊断信息。
+    # 把案例元数据压缩成 Milvus 可存储的 JSON，超长时保留关键诊断信息。
     raw = json.dumps(metadata, ensure_ascii=False)
     if len(raw.encode("utf-8")) <= 8192:
         return raw
@@ -245,7 +245,7 @@ def _metadata_json(metadata: dict[str, Any]) -> str:
 
 
 def _format_scores(scores: list[float], limit: int = 5) -> str:
-    # 方法说明：把历史案例相似度分数格式化成日志短文本。
+    # 把历史案例相似度分数格式化成日志短文本。
     if not scores:
         return "[]"
     suffix = ", ..." if len(scores) > limit else ""

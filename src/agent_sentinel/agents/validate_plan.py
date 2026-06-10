@@ -14,7 +14,7 @@ DANGEROUS_KEYWORDS = ("rm -rf", "drop table", "shutdown", "reboot", "kubectl del
 
 
 async def validate_plan_node(state: DiagnosisState, llm: LLMExecutor) -> DiagnosisState:
-    # 方法说明：在方案交给人或执行前做安全检查，拦截明显危险的操作建议。
+    # 在方案交给人或执行前做安全检查，拦截明显危险的操作建议。
     logger.info("Node validate started")
     plan_text = str(state.get("recommended_plan", {})).lower()
     # 先用本地规则拦截明显高风险动作，再交给 LLM 做语义层面的方案校验。
@@ -46,7 +46,7 @@ async def validate_plan_node(state: DiagnosisState, llm: LLMExecutor) -> Diagnos
 
 
 def validation_result(state: DiagnosisState) -> str:
-    # 方法说明：根据校验结果决定下一步：通过则继续，首次失败则回到方案生成节点重试。
+    # 根据校验结果决定下一步：通过则继续，首次失败则回到方案生成节点重试。
     if state.get("validation_result", False):
         return "pass"
     if state.get("validation_attempts", 0) <= 1:

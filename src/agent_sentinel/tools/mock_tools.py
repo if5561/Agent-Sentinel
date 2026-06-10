@@ -15,7 +15,7 @@ class MockMetricsProvider:
 
     @async_retry(max_attempts=2)
     async def get_metrics(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-        # 方法说明：返回一组固定的模拟指标，方便本地演示诊断流程而不依赖真实监控系统。
+        # 返回一组固定的模拟指标，方便本地演示诊断流程而不依赖真实监控系统。
         async with asyncio.timeout(5):
             logger.info("Fetching mock metrics summary_chars=%s", len(alert_summary))
             await asyncio.sleep(0.05)
@@ -74,7 +74,7 @@ class MockLogsProvider:
 
     @async_retry(max_attempts=2)
     async def query_logs(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-        # 方法说明：返回一组固定的模拟错误日志，方便本地演示日志证据如何进入诊断流程。
+        # 返回一组固定的模拟错误日志，方便本地演示日志证据如何进入诊断流程。
         async with asyncio.timeout(5):
             logger.info("Querying mock logs summary_chars=%s", len(alert_summary))
             await asyncio.sleep(0.05)
@@ -138,7 +138,7 @@ class MockTopologyProvider:
 
     @async_retry(max_attempts=2)
     async def get_topology(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-        # 方法说明：返回一组固定的模拟服务依赖，方便本地演示拓扑分析。
+        # 返回一组固定的模拟服务依赖，方便本地演示拓扑分析。
         async with asyncio.timeout(5):
             logger.info("Fetching mock topology summary_chars=%s", len(alert_summary))
             await asyncio.sleep(0.05)
@@ -150,29 +150,29 @@ class MockToolsProvider:
     """Mock 工具提供者，组合所有 Mock 子提供者"""
 
     def __init__(self) -> None:
-        # 方法说明：组装 mock 指标、日志和拓扑 provider，让本地环境也能一次性获取完整现场数据。
+        # 组装 mock 指标、日志和拓扑 provider，让本地环境也能一次性获取完整现场数据。
         self._metrics = MockMetricsProvider()
         self._logs = MockLogsProvider()
         self._topology = MockTopologyProvider()
 
     @property
     def metrics(self) -> MockMetricsProvider:
-        # 方法说明：返回 mock 指标 provider，供上层按统一工具接口调用。
+        # 返回 mock 指标 provider，供上层按统一工具接口调用。
         return self._metrics
 
     @property
     def logs(self) -> MockLogsProvider:
-        # 方法说明：返回 mock 日志 provider，供上层按统一工具接口调用。
+        # 返回 mock 日志 provider，供上层按统一工具接口调用。
         return self._logs
 
     @property
     def topology(self) -> MockTopologyProvider:
-        # 方法说明：返回 mock 拓扑 provider，供上层按统一工具接口调用。
+        # 返回 mock 拓扑 provider，供上层按统一工具接口调用。
         return self._topology
 
     async def fetch_all(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
         """并发获取所有数据"""
-        # 方法说明：并发返回模拟指标、日志和拓扑，保持和真实 provider 相同的数据结构。
+        # 并发返回模拟指标、日志和拓扑，保持和真实 provider 相同的数据结构。
         metrics, logs, topology = await asyncio.gather(
             self._metrics.get_metrics(alert_summary, group_id),
             self._logs.query_logs(alert_summary, group_id),
@@ -183,20 +183,20 @@ class MockToolsProvider:
 
 # 向后兼容：保留原有函数接口
 async def get_metrics(alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-    # 方法说明：向后兼容旧函数调用方式，内部转到 MockMetricsProvider。
+    # 向后兼容旧函数调用方式，内部转到 MockMetricsProvider。
     return await MockMetricsProvider().get_metrics(alert_summary, group_id)
 
 
 async def query_logs(alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-    # 方法说明：向后兼容旧函数调用方式，内部转到 MockLogsProvider 查询模拟日志。
+    # 向后兼容旧函数调用方式，内部转到 MockLogsProvider 查询模拟日志。
     return await MockLogsProvider().query_logs(alert_summary, group_id)
 
 
 async def get_topology(alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-    # 方法说明：向后兼容旧函数调用方式，内部转到 MockTopologyProvider。
+    # 向后兼容旧函数调用方式，内部转到 MockTopologyProvider。
     return await MockTopologyProvider().get_topology(alert_summary, group_id)
 
 
 async def fetch_all_live_data(alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-    # 方法说明：向后兼容旧函数调用方式，一次性返回 mock 现场数据。
+    # 向后兼容旧函数调用方式，一次性返回 mock 现场数据。
     return await MockToolsProvider().fetch_all(alert_summary, group_id)

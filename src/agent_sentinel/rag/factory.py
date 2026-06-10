@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_retriever(settings: Settings) -> BaseRetriever:
-    # 方法说明：根据配置组装 RAG 检索器；未启用 Milvus 或配置不完整时自动退回模拟检索。
+    # 根据配置组装 RAG 检索器；未启用 Milvus 或配置不完整时自动退回模拟检索。
     provider = settings.rag_provider.strip().lower()
     if provider != "milvus":
         logger.info("Using mock RAG provider provider=%s", provider)

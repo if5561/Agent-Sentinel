@@ -39,12 +39,12 @@ class LangfusePrompt:
 
 class SupportsAinvoke(Protocol):
     async def ainvoke(self, input: object, config: dict[str, Any] | None = None, **kwargs: Any) -> object:
-        # 方法说明：声明模型对象需要支持异步调用，方便 Langfuse 服务统一包装不同模型客户端。
+        # 声明模型对象需要支持异步调用，方便 Langfuse 服务统一包装不同模型客户端。
         ...
 
 
 def set_trace_context(**values: Any) -> Token[dict[str, Any]]:
-    # 方法说明：把当前诊断的 trace、任务和节点信息放进上下文，后续模型调用会自动带上这些信息。
+    # 把当前诊断的 trace、任务和节点信息放进上下文，后续模型调用会自动带上这些信息。
     current = dict(_TRACE_CONTEXT.get())
     # contextvars 让同一次工作流中的多次 LLM 调用共享 trace 元数据，同时不污染并发请求。
     current.update({key: value for key, value in values.items() if value is not None})
@@ -52,24 +52,24 @@ def set_trace_context(**values: Any) -> Token[dict[str, Any]]:
 
 
 def reset_trace_context(token: Token[dict[str, Any]]) -> None:
-    # 方法说明：模型调用结束后恢复旧上下文，避免并发请求之间互相串 trace。
+    # 模型调用结束后恢复旧上下文，避免并发请求之间互相串 trace。
     _TRACE_CONTEXT.reset(token)
 
 
 def current_trace_context() -> dict[str, Any]:
-    # 方法说明：读取当前异步任务里的追踪上下文，供工具路由、证据审查等节点复用。
+    # 读取当前异步任务里的追踪上下文，供工具路由、证据审查等节点复用。
     return dict(_TRACE_CONTEXT.get())
 
 
 def current_trace_id() -> str | None:
-    # 方法说明：取出当前诊断的业务追踪编号；没有追踪信息时返回空值。
+    # 取出当前诊断的业务追踪编号；没有追踪信息时返回空值。
     trace_id = str(_TRACE_CONTEXT.get().get("trace_id") or "").strip()
     return trace_id or None
 
 
 class LangfuseHttpClient:
     def __init__(self, config: LangfuseConfig) -> None:
-        # 方法说明：保存 Langfuse 地址和认证信息，并创建复用的异步 HTTP 客户端。
+        # 保存 Langfuse 地址和认证信息，并创建复用的异步 HTTP 客户端。
         self.config = config
         self.host = str(config.host or "").rstrip("/")
         self._client = httpx.AsyncClient(
@@ -78,11 +78,11 @@ class LangfuseHttpClient:
         )
 
     async def close(self) -> None:
-        # 方法说明：关闭 Langfuse HTTP 连接池，服务退出时用来释放网络资源。
+        # 关闭 Langfuse HTTP 连接池，服务退出时用来释放网络资源。
         await self._client.aclose()
 
     async def get_prompt(self, name: str, label: str) -> dict[str, Any] | None:
-        # 方法说明：从 Langfuse 远程读取指定名称和标签的提示词，找不到时返回空值走本地兜底。
+        # 从 Langfuse 远程读取指定名称和标签的提示词，找不到时返回空值走本地兜底。
         path = f"/api/public/v2/prompts/{quote(name)}"
         response = await self._client.get(
             f"{self.host}{path}",
@@ -102,7 +102,7 @@ class LangfuseHttpClient:
         prompt_type: str = "text",
         labels: list[str] | None = None,
     ) -> dict[str, Any]:
-        # 方法说明：把本地准备好的提示词创建到 Langfuse，供后续统一版本管理。
+        # 把本地准备好的提示词创建到 Langfuse，供后续统一版本管理。
         response = await self._client.post(
             f"{self.host}/api/public/v2/prompts",
             json={
@@ -117,7 +117,7 @@ class LangfuseHttpClient:
         return data if isinstance(data, dict) else {}
 
     async def list_generations(self, trace_id: str) -> list[dict[str, Any]]:
-        # 方法说明：查询某个 trace 下已经写入 Langfuse 的模型 generation，用于后续补充 prompt 关联。
+        # 查询某个 trace 下已经写入 Langfuse 的模型 generation，用于后续补充 prompt 关联。
         response = await self._client.get(
             f"{self.host}/api/public/observations",
             params={
@@ -139,7 +139,7 @@ class LangfuseHttpClient:
         return []
 
     async def ingest(self, events: list[dict[str, Any]]) -> None:
-        # 方法说明：向 Langfuse 批量写入事件，例如把已有 generation 补绑定到某个 prompt。
+        # 向 Langfuse 批量写入事件，例如把已有 generation 补绑定到某个 prompt。
         if not events:
             return
         response = await self._client.post(
@@ -155,7 +155,7 @@ class LangfuseHttpClient:
         response.raise_for_status()
 
     def _auth_header(self) -> str:
-        # 方法说明：把 Langfuse 公钥和密钥编码成 HTTP Basic 认证头。
+        # 把 Langfuse 公钥和密钥编码成 HTTP Basic 认证头。
         raw = f"{self.config.public_key or ''}:{self.config.secret_key or ''}".encode("utf-8")
         return f"Basic {base64.b64encode(raw).decode('ascii')}"
 
@@ -175,15 +175,15 @@ class NullLangfusePromptService:
         config: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> object:
-        # 方法说明：Langfuse 未启用时直接调用模型，不做远程提示词和观测增强。
+        # Langfuse 未启用时直接调用模型，不做远程提示词和观测增强。
         return await llm.ainvoke(fallback_prompt, config=config)
 
     def callbacks(self) -> list[Any]:
-        # 方法说明：空服务不提供 LangChain 回调，保持调用方接口一致。
+        # 空服务不提供 LangChain 回调，保持调用方接口一致。
         return []
 
     async def flush(self) -> None:
-        # 方法说明：空服务没有待写入的观测任务，直接返回。
+        # 空服务没有待写入的观测任务，直接返回。
         return None
 
 
@@ -196,7 +196,7 @@ class LangfusePromptService:
         *,
         fallback_provider: PromptFallback | None = None,
     ) -> None:
-        # 方法说明：准备 Langfuse 提示词服务，包含远程客户端、兜底加载器、缓存和后台补链任务集合。
+        # 准备 Langfuse 提示词服务，包含远程客户端、兜底加载器、缓存和后台补链任务集合。
         self.config = config
         self.client = LangfuseHttpClient(config)
         self.fallback_provider = fallback_provider
@@ -215,7 +215,7 @@ class LangfusePromptService:
         label: str | None = None,
         fallback_prompt: str | None = None,
     ) -> LangfusePrompt:
-        # 方法说明：按优先级获取提示词：先查缓存和远程 Langfuse，再回退到自定义或本地模板。
+        # 按优先级获取提示词：先查缓存和远程 Langfuse，再回退到自定义或本地模板。
         prompt_label = label or self.config.label
         cache_key = (name, prompt_label)
         async with self._cache_lock:
@@ -246,7 +246,7 @@ class LangfusePromptService:
         prompt_type: str = "text",
         labels: list[str] | None = None,
     ) -> LangfusePrompt:
-        # 方法说明：通过 Langfuse API 创建提示词，并把接口返回内容转成项目内部统一结构。
+        # 通过 Langfuse API 创建提示词，并把接口返回内容转成项目内部统一结构。
         try:
             data = await self.client.create_prompt(
                 name=name,
@@ -271,7 +271,7 @@ class LangfusePromptService:
         config: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> object:
-        # 方法说明：渲染提示词、合并追踪元数据，再调用模型并把本次调用接入 Langfuse 观测链路。
+        # 渲染提示词、合并追踪元数据，再调用模型并把本次调用接入 Langfuse 观测链路。
         variables = variables or {}
         prompt = await self._resolve_prompt(prompt_name, prompt_label, fallback_prompt)
         rendered_prompt = render_prompt(prompt, variables)
@@ -323,7 +323,7 @@ class LangfusePromptService:
         prompt: LangfusePrompt,
         generation_name: str,
     ) -> None:
-        # 方法说明：异步轮询 Langfuse，找到刚写入的 generation 后补上它对应的 prompt 信息。
+        # 异步轮询 Langfuse，找到刚写入的 generation 后补上它对应的 prompt 信息。
         await asyncio.sleep(max(self.config.link_initial_delay_ms, 0) / 1000)
         for _ in range(max(self.config.link_max_retries, 1)):
             try:
@@ -346,11 +346,11 @@ class LangfusePromptService:
             await asyncio.sleep(max(self.config.link_poll_interval_ms, 1) / 1000)
 
     def callbacks(self) -> list[Any]:
-        # 方法说明：当前实现通过 LiteLLM metadata 上报，不额外注册 LangChain callbacks。
+        # 当前实现通过 LiteLLM metadata 上报，不额外注册 LangChain callbacks。
         return []
 
     async def flush(self) -> None:
-        # 方法说明：等待后台补链任务完成，并关闭 Langfuse HTTP 客户端。
+        # 等待后台补链任务完成，并关闭 Langfuse HTTP 客户端。
         tasks = list(self._pending_tasks)
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -362,7 +362,7 @@ class LangfusePromptService:
         prompt_label: str | None,
         fallback_prompt: str,
     ) -> LangfusePrompt:
-        # 方法说明：解析一次模型调用应该使用的提示词；指定名称失败时回退到调用方传入的文本。
+        # 解析一次模型调用应该使用的提示词；指定名称失败时回退到调用方传入的文本。
         if prompt_name:
             try:
                 return await self.get_prompt(prompt_name, label=prompt_label, fallback_prompt=fallback_prompt)
@@ -376,7 +376,7 @@ class LangfusePromptService:
         )
 
     async def _load_remote_prompt(self, name: str, label: str) -> LangfusePrompt | None:
-        # 方法说明：尝试从远程 Langfuse 加载提示词，失败时返回空值让主流程继续走本地兜底。
+        # 尝试从远程 Langfuse 加载提示词，失败时返回空值让主流程继续走本地兜底。
         if not self.config.remote_prompts_enabled:
             return None
         if not self.config.host:
@@ -392,7 +392,7 @@ class LangfusePromptService:
             return None
 
     async def _load_custom_fallback(self, name: str, label: str) -> LangfusePrompt | None:
-        # 方法说明：调用项目自定义的提示词兜底函数，适配测试或特殊部署环境。
+        # 调用项目自定义的提示词兜底函数，适配测试或特殊部署环境。
         if self.fallback_provider is None:
             return None
         try:
@@ -405,7 +405,7 @@ class LangfusePromptService:
             return None
 
     def _load_local_prompt(self, name: str, label: str) -> LangfusePrompt | None:
-        # 方法说明：在本地 prompts 目录里查找提示词文件，支持 txt、json、yaml 等格式。
+        # 在本地 prompts 目录里查找提示词文件，支持 txt、json、yaml 等格式。
         search_dirs = [
             _resolve_path(self.config.prompt_dir),
             PROJECT_ROOT / "prompts",
@@ -423,7 +423,7 @@ class LangfusePromptService:
         return None
 
     async def _bind_generation(self, generation_id: str | None, trace_id: str, prompt: LangfusePrompt) -> None:
-        # 方法说明：把已经产生的模型 generation 和提示词版本关联起来，便于在 Langfuse 页面追溯。
+        # 把已经产生的模型 generation 和提示词版本关联起来，便于在 Langfuse 页面追溯。
         if not generation_id:
             return
         try:
@@ -448,7 +448,7 @@ class LangfusePromptService:
             logger.warning("Langfuse generation prompt bind failed generation_id=%s error=%s", generation_id, exc)
 
     def _schedule(self, coroutine: Any) -> None:
-        # 方法说明：把补链任务放到后台执行，避免阻塞当前模型调用返回。
+        # 把补链任务放到后台执行，避免阻塞当前模型调用返回。
         try:
             task = asyncio.create_task(coroutine)
         except RuntimeError:
@@ -458,7 +458,7 @@ class LangfusePromptService:
 
 
 def build_langfuse_prompt_service(config: LangfuseConfig) -> LangfusePromptService | NullLangfusePromptService:
-    # 方法说明：根据配置决定使用真实 Langfuse 服务还是空实现，让业务代码不用到处判断开关。
+    # 根据配置决定使用真实 Langfuse 服务还是空实现，让业务代码不用到处判断开关。
     if not config.enabled:
         return NullLangfusePromptService()
     if not config.host or not config.public_key or not config.secret_key:
@@ -468,7 +468,7 @@ def build_langfuse_prompt_service(config: LangfuseConfig) -> LangfusePromptServi
 
 
 def render_prompt(prompt: LangfusePrompt, variables: dict[str, Any]) -> str | list[dict[str, str]]:
-    # 方法说明：把提示词模板里的变量替换成真实值，chat 类型会保留 role/content 消息结构。
+    # 把提示词模板里的变量替换成真实值，chat 类型会保留 role/content 消息结构。
     if prompt.prompt_type == "chat" and isinstance(prompt.content, list):
         # chat prompt 保留 role/content 结构，便于传给支持消息数组的模型客户端。
         return [
@@ -482,19 +482,19 @@ def render_prompt(prompt: LangfusePrompt, variables: dict[str, Any]) -> str | li
 
 
 def _render_template(template: str, variables: dict[str, Any]) -> str:
-    # 方法说明：渲染模板文本中的 {{变量}} 和兼容旧格式的 {变量} 占位符。
+    # 渲染模板文本中的 {{变量}} 和兼容旧格式的 {变量} 占位符。
     escaped: list[str] = []
 
     def protect_escaped(match: re.Match[str]) -> str:
         # 支持 \{{var}} 形式的转义变量，避免模板渲染误替换示例文本。
-        # 方法说明：先保护转义变量，等正常变量替换完再把原文放回去。
+        # 先保护转义变量，等正常变量替换完再把原文放回去。
         escaped.append(match.group(0)[1:])
         return f"__LANGFUSE_ESCAPED_VAR_{len(escaped) - 1}__"
 
     protected = re.sub(r"\\\{\{\s*[A-Za-z_][A-Za-z0-9_.-]*\s*\}\}", protect_escaped, template)
 
     def replace(match: re.Match[str]) -> str:
-        # 方法说明：把单个 {{变量}} 替换成 variables 里对应的值，找不到就替换成空字符串。
+        # 把单个 {{变量}} 替换成 variables 里对应的值，找不到就替换成空字符串。
         key = match.group(1)
         value = _lookup_variable(variables, key)
         return str(value if value is not None else "")
@@ -510,7 +510,7 @@ def _render_template(template: str, variables: dict[str, Any]) -> str:
 
 
 def _lookup_variable(variables: dict[str, Any], key: str) -> Any:
-    # 方法说明：支持 a.b.c 这种嵌套变量读取，让提示词可以引用复杂上下文里的字段。
+    # 支持 a.b.c 这种嵌套变量读取，让提示词可以引用复杂上下文里的字段。
     value: Any = variables
     for part in key.split("."):
         if isinstance(value, dict):
@@ -523,7 +523,7 @@ def _lookup_variable(variables: dict[str, Any], key: str) -> Any:
 
 
 def _parse_prompt_response(data: dict[str, Any], *, default_name: str, default_label: str) -> LangfusePrompt:
-    # 方法说明：把 Langfuse API 返回的提示词 JSON 转成项目内部的 LangfusePrompt 对象。
+    # 把 Langfuse API 返回的提示词 JSON 转成项目内部的 LangfusePrompt 对象。
     content = data.get("prompt")
     prompt_type = str(data.get("type") or ("chat" if isinstance(content, list) else "text"))
     return LangfusePrompt(
@@ -537,7 +537,7 @@ def _parse_prompt_response(data: dict[str, Any], *, default_name: str, default_l
 
 
 def _coerce_prompt(raw: LangfusePrompt | str | dict[str, Any] | None, *, name: str, label: str) -> LangfusePrompt | None:
-    # 方法说明：把字符串、字典或已有对象统一转换成 LangfusePrompt，方便上层统一处理。
+    # 把字符串、字典或已有对象统一转换成 LangfusePrompt，方便上层统一处理。
     if raw is None:
         return None
     if isinstance(raw, LangfusePrompt):
@@ -557,7 +557,7 @@ def _coerce_prompt(raw: LangfusePrompt | str | dict[str, Any] | None, *, name: s
 
 
 def _load_prompt_file(path: Path, *, name: str, label: str) -> LangfusePrompt:
-    # 方法说明：读取本地提示词文件，并按文件类型解析成统一提示词对象。
+    # 读取本地提示词文件，并按文件类型解析成统一提示词对象。
     if path.suffix == ".txt":
         return LangfusePrompt(name=name, prompt_type="text", content=path.read_text(encoding="utf-8"), label=label)
     if path.suffix == ".json":
@@ -582,14 +582,14 @@ def _merge_runnable_config(
     *,
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
-    # 方法说明：把 Langfuse 元数据合并进 LangChain runnable config，随模型调用一起传下去。
+    # 把 Langfuse 元数据合并进 LangChain runnable config，随模型调用一起传下去。
     merged = dict(config or {})
     merged["metadata"] = {**dict(merged.get("metadata") or {}), **metadata}
     return merged
 
 
 def _event(event_type: str, body: dict[str, Any]) -> dict[str, Any]:
-    # 方法说明：构造 Langfuse ingestion API 需要的事件结构，并自动去掉空字段。
+    # 构造 Langfuse ingestion API 需要的事件结构，并自动去掉空字段。
     return {
         "id": f"evt-{uuid.uuid4()}",
         "type": event_type,
@@ -598,14 +598,14 @@ def _event(event_type: str, body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _generation_id(generation: dict[str, Any]) -> str | None:
-    # 方法说明：从不同版本的 Langfuse observation 字段里提取 generation ID。
+    # 从不同版本的 Langfuse observation 字段里提取 generation ID。
     value = generation.get("id") or generation.get("observationId")
     text = str(value or "").strip()
     return text or None
 
 
 def _generation_matches(generation: dict[str, Any], generation_name: str) -> bool:
-    # 方法说明：判断某个 generation 是否属于当前节点，避免把 prompt 绑定到错误调用上。
+    # 判断某个 generation 是否属于当前节点，避免把 prompt 绑定到错误调用上。
     name = str(generation.get("name") or generation.get("generationName") or "").strip()
     if name and name != generation_name:
         return False
@@ -617,7 +617,7 @@ def _tags_for(
     metadata: dict[str, Any] | None,
     prompt: LangfusePrompt,
 ) -> list[str]:
-    # 方法说明：合并工作流、节点和提示词标签，去重后写入 Langfuse 便于筛选。
+    # 合并工作流、节点和提示词标签，去重后写入 Langfuse 便于筛选。
     raw_tags = [*(trace_context.get("tags") or []), *((metadata or {}).get("tags") or [])]
     tags = [str(tag) for tag in raw_tags if str(tag or "").strip()]
     tags.extend(["agent-sentinel", str(trace_context.get("workflow_type") or "workflow"), f"prompt:{prompt.name}"])
@@ -630,7 +630,7 @@ def _build_langfuse_metadata(
     metadata: dict[str, Any] | None,
     prompt: LangfusePrompt,
 ) -> dict[str, Any]:
-    # 方法说明：构造一次模型调用的完整观测元数据，串联业务 trace、节点名、prompt 版本和标签。
+    # 构造一次模型调用的完整观测元数据，串联业务 trace、节点名、prompt 版本和标签。
     metadata = metadata or {}
     business_trace_id = str(
         metadata.get("business_trace_id")
@@ -665,6 +665,6 @@ def _build_langfuse_metadata(
 
 
 def _resolve_path(path: str | Path) -> Path:
-    # 方法说明：把提示词目录路径解析成绝对路径，相对路径默认基于项目根目录。
+    # 把提示词目录路径解析成绝对路径，相对路径默认基于项目根目录。
     resolved = Path(path)
     return resolved if resolved.is_absolute() else PROJECT_ROOT / resolved

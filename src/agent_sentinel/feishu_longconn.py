@@ -27,7 +27,7 @@ class FeishuLongConnectionBot:
         analyze_callback: AnalyzeCallback,
         card_action_callback: Callable[[dict[str, object]], dict[str, str]] | None = None,
     ) -> None:
-        # 方法说明：保存长连接所需配置和回调，收到飞书事件后会把消息转交给诊断流程。
+        # 保存长连接所需配置和回调，收到飞书事件后会把消息转交给诊断流程。
         self.settings = settings
         self.analyze_callback = analyze_callback
         self.card_action_callback = card_action_callback
@@ -35,7 +35,7 @@ class FeishuLongConnectionBot:
         self._started = False
 
     def start(self) -> None:
-        # 方法说明：检查长连接开关、凭证和 SDK 后启动后台监听线程。
+        # 检查长连接开关、凭证和 SDK 后启动后台监听线程。
         if self._started:
             logger.info("Feishu long connection listener already started.")
             return
@@ -63,7 +63,7 @@ class FeishuLongConnectionBot:
         logger.info("Feishu long connection listener thread started.")
 
     def _run_forever(self) -> None:
-        # 方法说明：创建飞书长连接客户端并注册事件处理器，让机器人持续接收消息和卡片点击。
+        # 创建飞书长连接客户端并注册事件处理器，让机器人持续接收消息和卡片点击。
         import lark_oapi as lark
 
         # EventDispatcherHandler 同时注册消息事件和可选卡片回调事件，统一走长连接通道。
@@ -89,7 +89,7 @@ class FeishuLongConnectionBot:
         ws_client.start()
 
     def _handle_message_event(self, data: object) -> None:
-        # 方法说明：处理飞书实时消息事件，过滤无效消息后把用户文本投递给分析入口。
+        # 处理飞书实时消息事件，过滤无效消息后把用户文本投递给分析入口。
         started = time.perf_counter()
         try:
             import lark_oapi as lark
@@ -158,7 +158,7 @@ class FeishuLongConnectionBot:
             logger.exception("Failed to process Feishu long connection message event")
 
     def _handle_card_action_event(self, data: object) -> None:
-        # 方法说明：处理飞书卡片按钮点击，并把可能耗时的后续动作放到独立线程执行。
+        # 处理飞书卡片按钮点击，并把可能耗时的后续动作放到独立线程执行。
         if self.card_action_callback is None:
             return
         try:
@@ -184,14 +184,14 @@ class FeishuLongConnectionBot:
             logger.exception("Failed to process Feishu long connection card action event")
 
     def _run_card_action_payload(self, payload: dict[str, object]) -> None:
-        # 方法说明：在线程中启动异步分发逻辑，让卡片点击可以继续驱动工作流。
+        # 在线程中启动异步分发逻辑，让卡片点击可以继续驱动工作流。
         try:
             asyncio.run(self._dispatch_card_action(payload))
         except Exception:
             logger.exception("Failed to dispatch Feishu long connection card action event")
 
     async def _dispatch_card_action(self, payload: dict[str, object]) -> None:
-        # 方法说明：调用外部注册的卡片处理函数，并兼容同步函数和异步协程两种返回方式。
+        # 调用外部注册的卡片处理函数，并兼容同步函数和异步协程两种返回方式。
         if self.card_action_callback is None:
             return
         result = self.card_action_callback(payload)
@@ -199,14 +199,14 @@ class FeishuLongConnectionBot:
             await result
 
     def _extract_sender_open_id(self, sender: object) -> str | None:
-        # 方法说明：从飞书发送人结构中取出 open_id，用于后续回复时精确提醒用户。
+        # 从飞书发送人结构中取出 open_id，用于后续回复时精确提醒用户。
         if not isinstance(sender, dict):
             return None
         sender_id = str(sender.get("sender_id") or sender.get("id") or "").strip()
         return sender_id or None
 
     def _extract_sender_name(self, sender: object) -> str | None:
-        # 方法说明：从飞书发送人结构中取出显示名，用于消息提醒时展示更友好的称呼。
+        # 从飞书发送人结构中取出显示名，用于消息提醒时展示更友好的称呼。
         if not isinstance(sender, dict):
             return None
         name = str(sender.get("name") or "").strip()

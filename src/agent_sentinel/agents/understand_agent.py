@@ -31,7 +31,7 @@ async def understand_node(
     cache_threshold: float = 0.85,
     cache_enabled: bool = True,
 ) -> DiagnosisState:
-    # 方法说明：诊断第一步，先让模型把原始告警翻译成简洁摘要，再尝试匹配可复用的历史案例。
+    # 诊断第一步，先让模型把原始告警翻译成简洁摘要，再尝试匹配可复用的历史案例。
     logger.info("Node understand started")
     prompt_variables = {"raw_alert": state.get("raw_alert", {})}
     # understand 节点先把原始告警压缩成摘要，后续检索和方案生成都围绕这个摘要展开。
@@ -167,7 +167,7 @@ async def _ask_case_cache_decision(
     case: dict[str, Any],
     candidate_index: int,
 ) -> str:
-    # 方法说明：向飞书发送历史案例复用确认卡片，并等待用户选择“采用”或“拒绝”。
+    # 向飞书发送历史案例复用确认卡片，并等待用户选择“采用”或“拒绝”。
     workflow_thread_id = state.get("workflow_thread_id", "")
     workflow_run_id = state.get("workflow_run_id", "")
     # decision_id 与 workflow_thread_id 绑定，回调时才能恢复到对应的 interrupt 位置。
@@ -208,14 +208,14 @@ async def _ask_case_cache_decision(
 
 
 def _truncate_log_text(text: str, limit: int = 1000) -> str:
-    # 方法说明：截断过长日志内容，避免一条告警摘要把日志刷得难以阅读。
+    # 截断过长日志内容，避免一条告警摘要把日志刷得难以阅读。
     if len(text) <= limit:
         return text
     return f"{text[:limit]}..."
 
 
 async def _call_llm(llm: LLMExecutor, prompt: str, **kwargs: object) -> str:
-    # 方法说明：调用大模型生成文本，并兼容测试替身不支持额外参数的情况。
+    # 调用大模型生成文本，并兼容测试替身不支持额外参数的情况。
     try:
         return await llm.call(prompt, **kwargs)
     except TypeError as exc:

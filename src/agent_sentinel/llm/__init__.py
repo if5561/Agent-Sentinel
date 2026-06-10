@@ -7,7 +7,7 @@ from agent_sentinel.config import Settings
 
 
 def build_chat_model(settings: Settings, model_name: str | None = None) -> ChatOpenAI:
-    # 方法说明：根据项目配置创建聊天模型客户端，统一注入模型名、温度和 HTTP 代理策略。
+    # 根据项目配置创建聊天模型客户端，统一注入模型名、温度和 HTTP 代理策略。
     if not settings.openai_api_key:
         raise ValueError("OPENAI_API_KEY is missing. Please set it in your .env file.")
 

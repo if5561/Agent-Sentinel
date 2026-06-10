@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 async def final_result_node(state: DiagnosisState, sender: FeishuSender) -> DiagnosisState:
-    # 方法说明：把诊断摘要、处理方案、校验结果和证据链整理成最终文本并发送给用户。
+    # 把诊断摘要、处理方案、校验结果和证据链整理成最终文本并发送给用户。
     logger.info("Node final_result started")
     plan = state.get("recommended_plan", {})
     evidence = state.get("evidence", [])

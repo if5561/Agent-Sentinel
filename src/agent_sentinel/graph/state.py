@@ -4,7 +4,7 @@ from typing import Any, TypedDict
 
 
 class DiagnosisState(TypedDict, total=False):
-    # 方法说明：定义诊断流程共享的“资料袋”，每个节点都会往这里读取或补充信息。
+    # 定义诊断流程共享的“资料袋”，每个节点都会往这里读取或补充信息。
     raw_alert: dict[str, Any]
     alert_summary: str
     retrieved_docs: list[str]
@@ -40,10 +40,10 @@ class DiagnosisState(TypedDict, total=False):
 
 
 def append_message(state: DiagnosisState, role: str, content: str) -> list[dict[str, str]]:
-    # 方法说明：在不修改原状态的前提下追加一条对话消息，方便 LangGraph 合并状态。
+    # 在不修改原状态的前提下追加一条对话消息，方便 LangGraph 合并状态。
     return [*state.get("messages", []), {"role": role, "content": content}]
 
 
 def append_evidence(state: DiagnosisState, *items: str) -> list[str]:
-    # 方法说明：在证据链末尾追加新的判断依据，空内容会被自动忽略。
+    # 在证据链末尾追加新的判断依据，空内容会被自动忽略。
     return [*state.get("evidence", []), *[item for item in items if item]]

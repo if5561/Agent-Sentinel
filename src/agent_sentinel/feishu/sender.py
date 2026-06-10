@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class FeishuSender:
     def __init__(self, client: FeishuBotClient | None = None) -> None:
-        # 方法说明：保存飞书客户端，发送文本或卡片时统一通过这个出口访问飞书。
+        # 保存飞书客户端，发送文本或卡片时统一通过这个出口访问飞书。
         self.client = client
 
     async def send_message(
@@ -23,7 +23,7 @@ class FeishuSender:
         mention_open_id: str | None = None,
         mention_name: str | None = None,
     ) -> bool:
-        # 方法说明：向飞书会话发送普通文本；如果没有会话或客户端未配置，则记录日志后跳过。
+        # 向飞书会话发送普通文本；如果没有会话或客户端未配置，则记录日志后跳过。
         if not chat_id or not self.client or not self.client.is_configured():
             logger.info("Feishu text skipped chat_id=%s text=%s", chat_id, text)
             return False
@@ -47,7 +47,7 @@ class FeishuSender:
         *,
         thread_root_message_id: str | None = None,
     ) -> bool:
-        # 方法说明：把诊断方案做成确认卡片发给人，让人可以在飞书里批准或拒绝。
+        # 把诊断方案做成确认卡片发给人，让人可以在飞书里批准或拒绝。
         if not chat_id or not self.client or not self.client.is_configured():
             logger.info("Feishu card skipped chat_id=%s decision_id=%s", chat_id, decision_id)
             return False
@@ -70,7 +70,7 @@ class FeishuSender:
         candidate_index: int,
         thread_root_message_id: str | None = None,
     ) -> bool:
-        # 方法说明：把命中的历史案例做成选择卡片，供用户判断是否直接采用这条经验。
+        # 把命中的历史案例做成选择卡片，供用户判断是否直接采用这条经验。
         if not chat_id or not self.client or not self.client.is_configured():
             logger.info("Feishu cache card skipped chat_id=%s decision_id=%s", chat_id, decision_id)
             return False
@@ -99,7 +99,7 @@ class FeishuSender:
         *,
         thread_root_message_id: str | None = None,
     ) -> bool:
-        # 方法说明：把本次诊断结果做成反馈卡片，收集“有效/无效”来决定是否沉淀为案例。
+        # 把本次诊断结果做成反馈卡片，收集“有效/无效”来决定是否沉淀为案例。
         if not chat_id or not self.client or not self.client.is_configured():
             logger.info("Feishu feedback card skipped chat_id=%s decision_id=%s", chat_id, decision_id)
             return False
@@ -119,7 +119,7 @@ def build_confirmation_card(
     plan: dict[str, Any],
     evidence: list[str],
 ) -> dict[str, Any]:
-    # 方法说明：生成“诊断确认”飞书卡片，卡片里包含方案摘要、证据和批准/拒绝按钮。
+    # 生成“诊断确认”飞书卡片，卡片里包含方案摘要、证据和批准/拒绝按钮。
     plan_summary = str(plan.get("summary") or plan)[:900]
     evidence_text = "\n".join(f"- {item}" for item in evidence[:8]) or "- no evidence"
     return {
@@ -172,7 +172,7 @@ def build_case_cache_card(
     *,
     candidate_index: int,
 ) -> dict[str, Any]:
-    # 方法说明：生成“历史案例命中”飞书卡片，让用户比较相似案例并选择是否采用。
+    # 生成“历史案例命中”飞书卡片，让用户比较相似案例并选择是否采用。
     metadata = case.get("metadata") if isinstance(case.get("metadata"), dict) else {}
     plan = case.get("final_plan") or metadata.get("recommended_plan") or metadata.get("final_text") or {}
     plan_summary = _format_plan(plan)
@@ -240,7 +240,7 @@ def build_feedback_card(
     plan: dict[str, Any],
     evidence: list[str],
 ) -> dict[str, Any]:
-    # 方法说明：生成“诊断反馈学习”飞书卡片，用一次点击收集结果是否值得存入知识库。
+    # 生成“诊断反馈学习”飞书卡片，用一次点击收集结果是否值得存入知识库。
     plan_summary = _format_plan(plan)
     evidence_text = "\n".join(f"- {item}" for item in evidence[:5]) or "- no evidence"
     return {
@@ -287,7 +287,7 @@ def build_feedback_card(
 
 
 def _format_plan(plan: Any) -> str:
-    # 方法说明：把方案对象压缩成适合卡片展示的短文本，避免飞书卡片内容过长。
+    # 把方案对象压缩成适合卡片展示的短文本，避免飞书卡片内容过长。
     if isinstance(plan, dict):
         text = str(plan.get("summary") or plan)
     else:

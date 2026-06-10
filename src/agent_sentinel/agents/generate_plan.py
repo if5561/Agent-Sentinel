@@ -25,7 +25,7 @@ class PlanOutput(BaseModel):
     @classmethod
     def normalize_recommended_plan(cls, value: Any) -> dict[str, Any]:
         # 模型输出可能是 dict/list/string，统一归一化成 dict 方便后续节点消费。
-        # 方法说明：把模型返回的方案统一转成字典，避免后续节点因为字符串或列表格式不同而处理失败。
+        # 把模型返回的方案统一转成字典，避免后续节点因为字符串或列表格式不同而处理失败。
         if isinstance(value, dict):
             return value
         if isinstance(value, list):
@@ -37,7 +37,7 @@ class PlanOutput(BaseModel):
 
 @async_retry(max_attempts=2)
 async def generate_plan_node(state: DiagnosisState, llm: LLMExecutor) -> DiagnosisState:
-    # 方法说明：把告警摘要、检索资料、实时数据和证据交给模型，生成可执行的诊断/处理方案。
+    # 把告警摘要、检索资料、实时数据和证据交给模型，生成可执行的诊断/处理方案。
     logger.info("Node generate_plan started")
     parser = PydanticOutputParser(pydantic_object=PlanOutput)
     # 方案生成只读取前面节点沉淀的摘要、检索文档、实时数据和证据链。

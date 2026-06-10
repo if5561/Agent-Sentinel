@@ -13,7 +13,7 @@ _provider = None
 
 def _get_provider():
     """获取工具提供者（延迟初始化单例）"""
-    # 方法说明：第一次需要实时数据时才创建工具 provider，后续复用同一个对象减少初始化成本。
+    # 第一次需要实时数据时才创建工具 provider，后续复用同一个对象减少初始化成本。
     global _provider
     if _provider is None:
         from agent_sentinel.config import get_settings
@@ -26,7 +26,7 @@ def _get_provider():
 
 
 async def fetch_live_data_node(state: DiagnosisState) -> DiagnosisState:
-    # 方法说明：诊断中段补充实时现场数据，例如指标、日志和拓扑，帮助方案生成更贴近当前故障。
+    # 诊断中段补充实时现场数据，例如指标、日志和拓扑，帮助方案生成更贴近当前故障。
     logger.info("Node fetch_live_data started")
     group_id = state.get("chat_id")
 

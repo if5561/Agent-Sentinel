@@ -8,35 +8,35 @@ from dotenv import load_dotenv
 
 
 def _to_bool(value: str | None, default: bool = False) -> bool:
-    # 方法说明：把环境变量里的 true/false 字符串转换成布尔开关，没配置时使用默认值。
+    # 把环境变量里的 true/false 字符串转换成布尔开关，没配置时使用默认值。
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _to_float(value: str | None, default: float) -> float:
-    # 方法说明：把环境变量里的小数字符串转换成浮点数，例如温度、权重和阈值。
+    # 把环境变量里的小数字符串转换成浮点数，例如温度、权重和阈值。
     if value is None or value == "":
         return default
     return float(value)
 
 
 def _to_int(value: str | None, default: int) -> int:
-    # 方法说明：把环境变量里的数字字符串转换成整数，例如端口、超时和条数限制。
+    # 把环境变量里的数字字符串转换成整数，例如端口、超时和条数限制。
     if value is None or value == "":
         return default
     return int(value)
 
 
 def _to_list(value: str | None) -> list[str]:
-    # 方法说明：把逗号分隔的配置字符串转换成列表，例如模型列表或群白名单。
+    # 把逗号分隔的配置字符串转换成列表，例如模型列表或群白名单。
     if value is None or value.strip() == "":
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _to_args(value: str | None) -> list[str]:
-    # 方法说明：把 MCP 启动参数解析成列表，兼容逗号写法和命令行参数写法。
+    # 把 MCP 启动参数解析成列表，兼容逗号写法和命令行参数写法。
     if value is None or value.strip() == "":
         return []
     # MCP 启动参数既可能来自逗号分隔的环境变量，也可能是 shell 风格参数串。
@@ -47,7 +47,7 @@ def _to_args(value: str | None) -> list[str]:
 
 def _first_non_empty(*values: str | None) -> str | None:
     # 多个兼容环境变量按优先级取第一个非空值，便于兼容 Codex/OpenAI/自定义配置名。
-    # 方法说明：从多个候选配置名中取第一个非空值，用来兼容不同部署环境的命名习惯。
+    # 从多个候选配置名中取第一个非空值，用来兼容不同部署环境的命名习惯。
     for value in values:
         if value is not None and value != "":
             return value
@@ -186,7 +186,7 @@ class Settings:
 
 
 def get_settings() -> Settings:
-    # 方法说明：汇总 YAML、.env 和系统环境变量，生成整个应用运行时使用的统一配置对象。
+    # 汇总 YAML、.env 和系统环境变量，生成整个应用运行时使用的统一配置对象。
     load_dotenv()
     # settings.yaml 提供默认结构化配置，环境变量用于部署时覆盖敏感项和环境差异。
     yaml_settings = _load_yaml_settings()
@@ -464,7 +464,7 @@ def get_settings() -> Settings:
 
 
 def _load_yaml_settings() -> dict[str, object]:
-    # 方法说明：读取结构化配置文件；读取失败时返回空配置，让环境变量和默认值继续兜底。
+    # 读取结构化配置文件；读取失败时返回空配置，让环境变量和默认值继续兜底。
     try:
         from agent_sentinel.utils.config_loader import load_yaml
 

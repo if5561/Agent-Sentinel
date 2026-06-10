@@ -21,7 +21,7 @@ async def feedback_learning_node(
     case_store: HistoryCaseStore | None = None,
     enabled: bool = True,
 ) -> DiagnosisState:
-    # 方法说明：诊断结束后询问用户结果是否有效；有效案例会写入历史库，供下次相似告警复用。
+    # 诊断结束后询问用户结果是否有效；有效案例会写入历史库，供下次相似告警复用。
     logger.info("Node feedback_learning started enabled=%s", enabled)
     if not enabled or not case_store or not state.get("chat_id"):
         return {

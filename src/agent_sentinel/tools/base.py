@@ -8,7 +8,7 @@ class MetricsProvider(Protocol):
 
     async def get_metrics(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
         """获取监控指标"""
-        # 方法说明：定义“查询监控指标”的统一入口，不同实现可以去 Prometheus、ARMS 或 mock 数据源取数。
+        # 定义“查询监控指标”的统一入口，不同实现可以去 Prometheus、ARMS 或 mock 数据源取数。
         ...
 
 
@@ -17,7 +17,7 @@ class LogsProvider(Protocol):
 
     async def query_logs(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
         """查询日志"""
-        # 方法说明：定义“查询日志证据”的统一入口，不同实现可以去 SLS、MCP 或 mock 日志源取数。
+        # 定义“查询日志证据”的统一入口，不同实现可以去 SLS、MCP 或 mock 日志源取数。
         ...
 
 
@@ -26,7 +26,7 @@ class TopologyProvider(Protocol):
 
     async def get_topology(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
         """获取服务拓扑"""
-        # 方法说明：定义“查询服务依赖拓扑”的统一入口，用来辅助判断故障是否来自上下游依赖。
+        # 定义“查询服务依赖拓扑”的统一入口，用来辅助判断故障是否来自上下游依赖。
         ...
 
 
@@ -35,20 +35,20 @@ class ToolsProvider(Protocol):
 
     @property
     def metrics(self) -> MetricsProvider:
-        # 方法说明：暴露指标 provider，让上层不用关心真实实现来自哪个平台。
+        # 暴露指标 provider，让上层不用关心真实实现来自哪个平台。
         ...
 
     @property
     def logs(self) -> LogsProvider:
-        # 方法说明：暴露日志 provider，让诊断节点用统一方式查询错误日志。
+        # 暴露日志 provider，让诊断节点用统一方式查询错误日志。
         ...
 
     @property
     def topology(self) -> TopologyProvider:
-        # 方法说明：暴露拓扑 provider，让诊断节点用统一方式查询服务依赖关系。
+        # 暴露拓扑 provider，让诊断节点用统一方式查询服务依赖关系。
         ...
 
     async def fetch_all(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
         """并发获取所有数据"""
-        # 方法说明：定义“一次性查询指标、日志和拓扑”的入口，方便诊断节点并发补齐现场数据。
+        # 定义“一次性查询指标、日志和拓扑”的入口，方便诊断节点并发补齐现场数据。
         ...

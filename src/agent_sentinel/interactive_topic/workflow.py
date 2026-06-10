@@ -41,7 +41,7 @@ _tools_provider: Any | None = None
 
 
 def _get_tools_provider() -> Any:
-    # 方法说明：按需创建实时工具提供者，只有单卡片流程走到工具节点时才连接外部系统。
+    # 按需创建实时工具提供者，只有单卡片流程走到工具节点时才连接外部系统。
     global _tools_provider
     if _tools_provider is None:
         # 交互式 ReAct 工具按需初始化，避免没有进入工具节点时就连接外部系统。
@@ -66,7 +66,7 @@ class InteractiveTopicWorkflow:
         llm: LLMExecutor | None = None,
         checkpointer: Any | None = None,
     ) -> None:
-        # 方法说明：组装单卡片交互式诊断流程需要的发送器、检索器、案例库、模型和任务状态。
+        # 组装单卡片交互式诊断流程需要的发送器、检索器、案例库、模型和任务状态。
         self.sender = sender
         self.wait_seconds = wait_seconds
         self.retriever = retriever
@@ -83,7 +83,7 @@ class InteractiveTopicWorkflow:
         self._loop_guard = threading.Lock()
 
     def compile(self) -> Any:
-        # 方法说明：把单卡片诊断步骤编译成 LangGraph 流程，每一步执行后都等待用户确认或重试。
+        # 把单卡片诊断步骤编译成 LangGraph 流程，每一步执行后都等待用户确认或重试。
         if self._compiled is not None:
             return self._compiled
 
@@ -151,28 +151,28 @@ class InteractiveTopicWorkflow:
 
     async def start(self, chat_id: str, root_message_id: str, query: str) -> str:
         # HTTP/长连接回调线程不直接跑工作流，而是提交到内部事件循环串行管理。
-        # 方法说明：异步启动一次单卡片诊断任务，并返回本次任务 ID。
+        # 异步启动一次单卡片诊断任务，并返回本次任务 ID。
         future = self._submit(self._start_impl(chat_id, root_message_id, query))
         return await asyncio.wrap_future(future)
 
     def start_sync(self, chat_id: str, root_message_id: str, query: str) -> tuple[str, bool]:
-        # 方法说明：同步启动一次单卡片诊断任务，供普通同步入口复用同一套流程。
+        # 同步启动一次单卡片诊断任务，供普通同步入口复用同一套流程。
         future = self._submit(self._start_impl(chat_id, root_message_id, query))
         task_id = future.result()
         return f"Interactive topic workflow started: {task_id}", True
 
     async def handle_card_callback(self, payload: dict[str, Any], *, source: str = "card") -> dict[str, str]:
-        # 方法说明：异步处理飞书卡片按钮点击，把用户的“下一步/重试/反馈”动作送回流程。
+        # 异步处理飞书卡片按钮点击，把用户的“下一步/重试/反馈”动作送回流程。
         future = self._submit(self._handle_card_callback_impl(payload, source=source))
         return await asyncio.wrap_future(future)
 
     def handle_card_callback_sync(self, payload: dict[str, Any], *, source: str = "card") -> dict[str, str]:
-        # 方法说明：同步处理飞书卡片按钮点击，供长连接回调等同步场景调用。
+        # 同步处理飞书卡片按钮点击，供长连接回调等同步场景调用。
         future = self._submit(self._handle_card_callback_impl(payload, source=source))
         return future.result()
 
     async def _start_impl(self, chat_id: str, root_message_id: str, query: str) -> str:
-        # 方法说明：真正创建诊断任务、发送初始卡片，并把初始状态交给 LangGraph 执行。
+        # 真正创建诊断任务、发送初始卡片，并把初始状态交给 LangGraph 执行。
         started = time.perf_counter()
         existing_task = self.task_store.get_task_by_source(chat_id, root_message_id)
         if existing_task is not None:
@@ -232,7 +232,7 @@ class InteractiveTopicWorkflow:
         return task_id
 
     async def _handle_card_callback_impl(self, payload: dict[str, Any], *, source: str = "card") -> dict[str, str]:
-        # 方法说明：解析卡片回调里的任务、节点和动作，再决定是继续流程、重试节点还是记录反馈。
+        # 解析卡片回调里的任务、节点和动作，再决定是继续流程、重试节点还是记录反馈。
         value = self._extract_card_value(payload)
         task_id = str(value.get("task_id") or "")
         node_name = str(value.get("node_name") or value.get("node") or "")
@@ -293,7 +293,7 @@ class InteractiveTopicWorkflow:
         runner: NodeRunner,
         state: TopicFlowState,
     ) -> TopicFlowState:
-        # 方法说明：包装单卡片流程里的每个节点，统一处理执行、展示、等待确认、重试和错误状态。
+        # 包装单卡片流程里的每个节点，统一处理执行、展示、等待确认、重试和错误状态。
         task_id = state["task_id"]
         task = self.task_store.get_task(task_id)
         card_message_id = task.card_message_id if task else None
@@ -538,7 +538,7 @@ class InteractiveTopicWorkflow:
         return update
 
     async def _drive(self, task_id: str, graph_input: TopicFlowState | Command) -> None:
-        # 方法说明：驱动指定任务继续往前跑，直到下一个需要用户确认的节点或整个流程结束。
+        # 驱动指定任务继续往前跑，直到下一个需要用户确认的节点或整个流程结束。
         app = self.compile()
         trace_id = self._trace_id_for_input(task_id, graph_input)
         metadata = self._langfuse_metadata(task_id, graph_input)
@@ -601,7 +601,7 @@ class InteractiveTopicWorkflow:
                 self.llm.reset_trace_context(token)
 
     def _on_timeout(self, task_id: str, node_name: str) -> None:
-        # 方法说明：节点等待用户太久时自动选择“下一步”，避免诊断流程一直卡住。
+        # 节点等待用户太久时自动选择“下一步”，避免诊断流程一直卡住。
         try:
             logger.info("Interactive topic timeout fired task_id=%s node=%s", task_id, node_name)
             self.handle_card_callback_sync(
@@ -612,7 +612,7 @@ class InteractiveTopicWorkflow:
             logger.exception("Interactive topic timeout handling failed task_id=%s node=%s", task_id, node_name)
 
     async def _get_task_lock(self, task_id: str) -> asyncio.Lock:
-        # 方法说明：为每个任务准备一把锁，防止多个按钮回调同时推进同一条流程。
+        # 为每个任务准备一把锁，防止多个按钮回调同时推进同一条流程。
         async with self._task_locks_guard:
             lock = self._task_locks.get(task_id)
             if lock is None:
@@ -621,7 +621,7 @@ class InteractiveTopicWorkflow:
             return lock
 
     def _route_after_confirm(self, state: TopicFlowState) -> str:
-        # 方法说明：根据用户刚才点的是“重试”还是“下一步”，决定当前节点是否重新执行。
+        # 根据用户刚才点的是“重试”还是“下一步”，决定当前节点是否重新执行。
         if state.get("last_action") != "retry":
             return "next"
         current_node = str(state.get("current_node") or "")
@@ -629,7 +629,7 @@ class InteractiveTopicWorkflow:
         return "retry" if retry_count < MAX_NODE_RETRIES else "next"
 
     def _initial_diagnosis_state(self, *, chat_id: str, root_message_id: str, query: str, task_id: str) -> DiagnosisState:
-        # 方法说明：把飞书用户消息包装成标准诊断状态，让单卡片流程也能复用普通诊断节点。
+        # 把飞书用户消息包装成标准诊断状态，让单卡片流程也能复用普通诊断节点。
         trace_id = trace_id_from_parts(chat_id, root_message_id)
         return {
             "raw_alert": {
@@ -651,7 +651,7 @@ class InteractiveTopicWorkflow:
         }
 
     def _diagnosis_state(self, state: TopicFlowState) -> DiagnosisState:
-        # 方法说明：从单卡片状态中取出标准诊断状态；缺失时用当前任务信息重新补一份。
+        # 从单卡片状态中取出标准诊断状态；缺失时用当前任务信息重新补一份。
         diagnosis_state = state.get("diagnosis_state")
         if diagnosis_state:
             return diagnosis_state
@@ -663,17 +663,17 @@ class InteractiveTopicWorkflow:
         )
 
     def _merge_diagnosis_state(self, state: TopicFlowState, update: DiagnosisState) -> DiagnosisState:
-        # 方法说明：把某个节点产出的诊断增量合并回标准诊断状态。
+        # 把某个节点产出的诊断增量合并回标准诊断状态。
         return {**self._diagnosis_state(state), **update}
 
     def _normalize_node_result(self, result: NodeRunResult, state: TopicFlowState) -> tuple[str, DiagnosisState]:
-        # 方法说明：统一节点返回格式，确保每个节点都有展示文本和最新诊断状态。
+        # 统一节点返回格式，确保每个节点都有展示文本和最新诊断状态。
         if isinstance(result, tuple):
             return result
         return result, self._diagnosis_state(state)
 
     async def _understand(self, state: TopicFlowState) -> NodeRunResult:
-        # 方法说明：单卡片流程的第一步，把用户问题理解成后续检索和工具调用可用的告警摘要。
+        # 单卡片流程的第一步，把用户问题理解成后续检索和工具调用可用的告警摘要。
         if self.llm is None:
             diagnosis_state = self._merge_diagnosis_state(state, {"alert_summary": state.get("query", "")})
             return f"告警理解完成：{state.get('query', '')}", diagnosis_state
@@ -688,7 +688,7 @@ class InteractiveTopicWorkflow:
         return f"告警理解完成：\n{summary}", diagnosis_state
 
     async def _cache_check(self, state: TopicFlowState) -> NodeRunResult:
-        # 方法说明：查询历史成功案例，看看当前问题是否能直接复用以前的处理经验。
+        # 查询历史成功案例，看看当前问题是否能直接复用以前的处理经验。
         query = str(self._diagnosis_state(state).get("alert_summary") or state.get("query", ""))
         if self.case_store is None:
             logger.info("Interactive cache check skipped task_id=%s reason=no_case_store", state.get("task_id"))
@@ -730,7 +730,7 @@ class InteractiveTopicWorkflow:
         return "\n".join(lines), diagnosis_state
 
     async def _rag_retrieve(self, state: TopicFlowState) -> NodeRunResult:
-        # 方法说明：从知识库和历史案例中召回背景资料，为后续判断补充上下文。
+        # 从知识库和历史案例中召回背景资料，为后续判断补充上下文。
         query = str(self._diagnosis_state(state).get("alert_summary") or state.get("query", ""))
         started = time.perf_counter()
         logger.info("Interactive RAG retrieve start task_id=%s query_chars=%s", state.get("task_id"), len(query))
@@ -788,7 +788,7 @@ class InteractiveTopicWorkflow:
         return "\n".join(lines), diagnosis_state
 
     async def _handle_feedback_callback(self, task_id: str, action: str, *, source: str) -> dict[str, str]:
-        # 方法说明：处理最终“结果有效/无效”反馈，有效时尝试把本次诊断写入历史案例库。
+        # 处理最终“结果有效/无效”反馈，有效时尝试把本次诊断写入历史案例库。
         if not task_id:
             logger.info("Interactive feedback ignored missing task_id action=%s source=%s", action, source)
             return {"status": "ignored"}
@@ -859,7 +859,7 @@ class InteractiveTopicWorkflow:
         return {"status": "ok", "saved_case_id": saved_case_id}
 
     async def _tool_call(self, state: TopicFlowState) -> NodeRunResult:
-        # 方法说明：兼容旧版工具调用节点，一次性抓取指标、日志和拓扑等实时数据。
+        # 兼容旧版工具调用节点，一次性抓取指标、日志和拓扑等实时数据。
         update = await fetch_live_data_node(self._diagnosis_state(state))
         diagnosis_state = self._merge_diagnosis_state(state, update)
         live_data = diagnosis_state.get("live_data", {})
@@ -867,7 +867,7 @@ class InteractiveTopicWorkflow:
 
 
     async def _tool_router(self, state: TopicFlowState) -> NodeRunResult:
-        # 方法说明：根据当前问题和已有证据决定需要调用哪些只读工具，以及每个工具查什么。
+        # 根据当前问题和已有证据决定需要调用哪些只读工具，以及每个工具查什么。
         diagnosis_state = self._diagnosis_state(state)
         default_plan = _default_tool_plan(state, diagnosis_state)
         if self.llm is None:
@@ -912,7 +912,7 @@ class InteractiveTopicWorkflow:
         return _format_tool_plan(tool_plan), diagnosis_state
 
     async def _tool_executor(self, state: TopicFlowState) -> NodeRunResult:
-        # 方法说明：按工具路由结果逐个执行 Prometheus、日志或拓扑查询，并汇总成现场证据。
+        # 按工具路由结果逐个执行 Prometheus、日志或拓扑查询，并汇总成现场证据。
         diagnosis_state = self._diagnosis_state(state)
         tool_plan = _sanitize_tool_plan(state.get("tool_plan") or diagnosis_state.get("tool_plan") or {})
         if not tool_plan.get("need_tools"):
@@ -981,7 +981,7 @@ class InteractiveTopicWorkflow:
         return _format_tool_results(tool_results), diagnosis_state
 
     async def _evidence_review(self, state: TopicFlowState) -> NodeRunResult:
-        # 方法说明：检查当前证据是否足够支撑诊断方案，不足时记录还缺哪些指标或日志。
+        # 检查当前证据是否足够支撑诊断方案，不足时记录还缺哪些指标或日志。
         diagnosis_state = self._diagnosis_state(state)
         tool_results = [
             item for item in (state.get("tool_results") or diagnosis_state.get("tool_results") or [])
@@ -1039,7 +1039,7 @@ class InteractiveTopicWorkflow:
         return _format_evidence_review(review), diagnosis_state
 
     async def _generate_plan(self, state: TopicFlowState) -> NodeRunResult:
-        # 方法说明：基于摘要、RAG、工具结果和证据审查生成处理方案，模型失败时给出保守兜底方案。
+        # 基于摘要、RAG、工具结果和证据审查生成处理方案，模型失败时给出保守兜底方案。
         if self.llm is None:
             diagnosis_state = self._merge_diagnosis_state(
                 state,
@@ -1067,7 +1067,7 @@ class InteractiveTopicWorkflow:
         return _format_plan_result(diagnosis_state.get("recommended_plan", {}), diagnosis_state.get("evidence", [])), diagnosis_state
 
     async def _validate(self, state: TopicFlowState) -> NodeRunResult:
-        # 方法说明：对生成的处理方案做安全校验，避免把高风险操作直接展示为可执行建议。
+        # 对生成的处理方案做安全校验，避免把高风险操作直接展示为可执行建议。
         if self.llm is None:
             diagnosis_state = self._merge_diagnosis_state(state, {"validation_result": False})
             return "方案校验跳过：LLM 未配置。", diagnosis_state
@@ -1082,7 +1082,7 @@ class InteractiveTopicWorkflow:
         ), diagnosis_state
 
     async def _summary(self, state: TopicFlowState) -> str:
-        # 方法说明：把前面所有节点的结果压缩成飞书卡片上最终展示的中文诊断结论。
+        # 把前面所有节点的结果压缩成飞书卡片上最终展示的中文诊断结论。
         if self.llm is not None:
             prompt = _build_summary_prompt(state)
             try:
@@ -1116,7 +1116,7 @@ class InteractiveTopicWorkflow:
         return "总结完成：建议先限流止血，扩容消费者，检查数据库慢查询，并持续观察错误率回落。"
 
     def _build_final_text(self, state: dict[str, Any]) -> str:
-        # 方法说明：从流程状态中取出最终总结；没有总结时用最后一个节点结果兜底展示。
+        # 从流程状态中取出最终总结；没有总结时用最后一个节点结果兜底展示。
         results = state.get("node_results", [])
         last_result = ""
         for item in results:
@@ -1136,7 +1136,7 @@ class InteractiveTopicWorkflow:
         return "\n".join(lines)
 
     def _trace_id_for_input(self, task_id: str, graph_input: TopicFlowState | Command) -> str:
-        # 方法说明：为单卡片任务生成追踪 ID，方便日志、模型调用和节点事件互相关联。
+        # 为单卡片任务生成追踪 ID，方便日志、模型调用和节点事件互相关联。
         if isinstance(graph_input, dict):
             return str(
                 graph_input.get("trace_id")
@@ -1148,7 +1148,7 @@ class InteractiveTopicWorkflow:
         return task_id
 
     def _langfuse_metadata(self, task_id: str, graph_input: TopicFlowState | Command) -> dict[str, object]:
-        # 方法说明：整理写入 Langfuse 的任务元数据，让单卡片流程里的模型调用能串成一条链。
+        # 整理写入 Langfuse 的任务元数据，让单卡片流程里的模型调用能串成一条链。
         if isinstance(graph_input, dict):
             chat_id = graph_input.get("chat_id")
             root_message_id = graph_input.get("root_message_id")
@@ -1183,7 +1183,7 @@ class InteractiveTopicWorkflow:
         error: BaseException | None = None,
         **extra: object,
     ) -> None:
-        # 方法说明：记录节点级 JSON 事件，方便从日志系统还原每个节点的执行状态。
+        # 记录节点级 JSON 事件，方便从日志系统还原每个节点的执行状态。
         trace_id = str(
             state.get("trace_id")
             or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id"))
@@ -1225,7 +1225,7 @@ class InteractiveTopicWorkflow:
         status: str,
         **extra: object,
     ) -> None:
-        # 方法说明：记录智能体决策或工具调用事件，用于后续审计“为什么调用了某个工具”。
+        # 记录智能体决策或工具调用事件，用于后续审计“为什么调用了某个工具”。
         trace_id = str(
             state.get("trace_id")
             or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id"))
@@ -1249,7 +1249,7 @@ class InteractiveTopicWorkflow:
         node_event_json_logger.info(payload_json)
 
     def _build_feedback_state(self, task: Any, values: dict[str, Any], final_text: str) -> dict[str, Any]:
-        # 方法说明：把一次有效的单卡片诊断整理成历史案例入库需要的结构。
+        # 把一次有效的单卡片诊断整理成历史案例入库需要的结构。
         node_results = values.get("node_results", [])
         result_by_node = {
             str(item.get("node_name")): str(item.get("result") or "")
@@ -1276,7 +1276,7 @@ class InteractiveTopicWorkflow:
         }
 
     def _node_results(self, task_id: str) -> list[dict[str, str]]:
-        # 方法说明：读取某个任务已经完成的节点结果，用于卡片重放或最终反馈处理。
+        # 读取某个任务已经完成的节点结果，用于卡片重放或最终反馈处理。
         app = self.compile()
         try:
             snapshot = app.get_state({"configurable": {"thread_id": task_id}, "recursion_limit": 50})
@@ -1288,7 +1288,7 @@ class InteractiveTopicWorkflow:
             return []
 
     def _confirmed_replay_result(self, task: Any, node_name: str) -> str | None:
-        # 方法说明：当用户确认当前节点后，复用该节点的展示结果，避免重复执行同一步。
+        # 当用户确认当前节点后，复用该节点的展示结果，避免重复执行同一步。
         if task is None:
             return None
         if task.current_node != node_name:
@@ -1305,7 +1305,7 @@ class InteractiveTopicWorkflow:
         current_status: str,
         node_results: list[dict[str, str]],
     ) -> dict[str, str]:
-        # 方法说明：根据已完成节点和当前节点，计算飞书卡片里每个步骤该显示的状态。
+        # 根据已完成节点和当前节点，计算飞书卡片里每个步骤该显示的状态。
         completed = {
             str(item.get("node_name"))
             for item in node_results
@@ -1319,7 +1319,7 @@ class InteractiveTopicWorkflow:
         return statuses
 
     def _extract_card_value(self, payload: dict[str, Any]) -> dict[str, Any]:
-        # 方法说明：兼容飞书不同回调结构，从 payload 中取出真正的按钮 value。
+        # 兼容飞书不同回调结构，从 payload 中取出真正的按钮 value。
         action = payload.get("action")
         if isinstance(action, dict):
             value = action.get("value")
@@ -1338,12 +1338,12 @@ class InteractiveTopicWorkflow:
         return payload
 
     def _submit(self, coro: Awaitable[Any]) -> concurrent.futures.Future[Any]:
-        # 方法说明：把协程提交到单卡片流程自己的后台事件循环执行。
+        # 把协程提交到单卡片流程自己的后台事件循环执行。
         loop = self._ensure_background_loop()
         return asyncio.run_coroutine_threadsafe(coro, loop)
 
     def _ensure_background_loop(self) -> asyncio.AbstractEventLoop:
-        # 方法说明：确保后台事件循环已经启动，用来串行管理单卡片任务。
+        # 确保后台事件循环已经启动，用来串行管理单卡片任务。
         with self._loop_guard:
             if self._loop is not None and self._loop.is_running():
                 return self._loop
@@ -1360,7 +1360,7 @@ class InteractiveTopicWorkflow:
         return self._loop
 
     def _run_background_loop(self) -> None:
-        # 方法说明：在线程里启动 asyncio 事件循环，让同步回调也能安全驱动异步工作流。
+        # 在线程里启动 asyncio 事件循环，让同步回调也能安全驱动异步工作流。
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         self._loop = loop
@@ -1370,7 +1370,7 @@ class InteractiveTopicWorkflow:
 
 
 def _node_title(node_name: str) -> str:
-    # 方法说明：把内部节点名转换成飞书卡片上更容易理解的步骤标题。
+    # 把内部节点名转换成飞书卡片上更容易理解的步骤标题。
     for step in WORKFLOW_STEPS:
         if step.node_name == node_name:
             return step.title
@@ -1378,19 +1378,19 @@ def _node_title(node_name: str) -> str:
 
 
 def _format_scores(scores: list[float], limit: int = 5) -> str:
-    # 方法说明：把相似度分数格式化成短文本，方便写入日志和卡片。
+    # 把相似度分数格式化成短文本，方便写入日志和卡片。
     if not scores:
         return "[]"
     return "[" + ", ".join(f"{score:.4f}" for score in scores[:limit]) + (", ..." if len(scores) > limit else "") + "]"
 
 
 def _allowed_tool_names() -> list[str]:
-    # 方法说明：列出当前允许模型选择的只读工具，防止它请求未知或危险工具。
+    # 列出当前允许模型选择的只读工具，防止它请求未知或危险工具。
     return ["prometheus_query_metrics", "aliyun_sls_query_logs", "topology_query"]
 
 
 def _default_tool_plan(state: TopicFlowState, diagnosis_state: DiagnosisState) -> dict[str, object]:
-    # 方法说明：当模型不可用或判断失败时，给出默认的安全工具查询计划。
+    # 当模型不可用或判断失败时，给出默认的安全工具查询计划。
     trace_id = str(state.get("trace_id") or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id")) or "")
     alert_summary = str(diagnosis_state.get("alert_summary") or state.get("query") or "")
     return {
@@ -1415,7 +1415,7 @@ def _default_tool_plan(state: TopicFlowState, diagnosis_state: DiagnosisState) -
 
 
 def _build_tool_router_prompt(state: TopicFlowState, diagnosis_state: DiagnosisState, default_plan: dict[str, object]) -> str:
-    # 方法说明：生成工具路由提示词，告诉模型只能选择哪些工具以及参数格式。
+    # 生成工具路由提示词，告诉模型只能选择哪些工具以及参数格式。
     context = {
         "query": state.get("query", ""),
         "business_trace_id": state.get("trace_id") or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id")),
@@ -1447,7 +1447,7 @@ def _build_evidence_review_prompt(
     tool_results: list[dict[str, object]],
     default_review: dict[str, object],
 ) -> str:
-    # 方法说明：生成证据审查提示词，让模型判断当前证据是否足够支撑方案。
+    # 生成证据审查提示词，让模型判断当前证据是否足够支撑方案。
     context = {
         "query": state.get("query", ""),
         "business_trace_id": state.get("trace_id") or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id")),
@@ -1466,7 +1466,7 @@ def _build_evidence_review_prompt(
 
 
 def _coerce_tool_plan(response: object, default_plan: dict[str, object]) -> dict[str, object]:
-    # 方法说明：把模型返回内容解析成工具计划；解析失败时使用默认计划。
+    # 把模型返回内容解析成工具计划；解析失败时使用默认计划。
     parsed = _extract_json_object(response)
     if not isinstance(parsed, dict):
         return default_plan
@@ -1474,7 +1474,7 @@ def _coerce_tool_plan(response: object, default_plan: dict[str, object]) -> dict
 
 
 def _coerce_evidence_review(response: object, default_review: dict[str, object]) -> dict[str, object]:
-    # 方法说明：把模型返回内容解析成证据审查结果，并补齐默认字段。
+    # 把模型返回内容解析成证据审查结果，并补齐默认字段。
     parsed = _extract_json_object(response)
     if not isinstance(parsed, dict):
         return default_review
@@ -1487,7 +1487,7 @@ def _coerce_evidence_review(response: object, default_review: dict[str, object])
 
 
 def _extract_json_object(value: object) -> dict[str, object] | None:
-    # 方法说明：从模型文本里提取 JSON 对象，兼容模型在 JSON 外多说了几句话的情况。
+    # 从模型文本里提取 JSON 对象，兼容模型在 JSON 外多说了几句话的情况。
     if isinstance(value, dict):
         return value
     text = str(value or "").strip()
@@ -1508,7 +1508,7 @@ def _extract_json_object(value: object) -> dict[str, object] | None:
 
 
 def _sanitize_tool_plan(plan: object) -> dict[str, object]:
-    # 方法说明：清洗工具计划，只保留白名单工具和安全参数，最多执行有限数量的调用。
+    # 清洗工具计划，只保留白名单工具和安全参数，最多执行有限数量的调用。
     if not isinstance(plan, dict):
         return {"need_tools": False, "reason": "Invalid tool plan.", "tool_calls": []}
     allowed = set(_allowed_tool_names())
@@ -1544,7 +1544,7 @@ async def _execute_tool_call(
     alert_summary: str,
     group_id: str | None,
 ) -> object:
-    # 方法说明：根据工具名分发到对应 provider，实际执行指标、日志或拓扑查询。
+    # 根据工具名分发到对应 provider，实际执行指标、日志或拓扑查询。
     if tool_name == "prometheus_query_metrics":
         metrics = getattr(provider, "metrics")
         if "promql" in arguments and hasattr(metrics, "_client") and hasattr(metrics, "_config"):
@@ -1569,7 +1569,7 @@ async def _execute_tool_call(
 
 
 def _extract_mcp_json(result: object) -> object:
-    # 方法说明：从 MCP 工具返回结构里取出 JSON 内容，其他格式则原样返回。
+    # 从 MCP 工具返回结构里取出 JSON 内容，其他格式则原样返回。
     if not isinstance(result, dict):
         return result
     content = result.get("content")
@@ -1579,7 +1579,7 @@ def _extract_mcp_json(result: object) -> object:
 
 
 def _redact_tool_arguments(arguments: object) -> dict[str, object]:
-    # 方法说明：记录工具参数前先脱敏，避免密钥、令牌、密码进入日志。
+    # 记录工具参数前先脱敏，避免密钥、令牌、密码进入日志。
     if not isinstance(arguments, dict):
         return {}
     redacted: dict[str, object] = {}
@@ -1594,14 +1594,14 @@ def _redact_tool_arguments(arguments: object) -> dict[str, object]:
 
 
 def _tool_query(arguments: object) -> str:
-    # 方法说明：从工具参数中提取最核心的查询语句，用于日志和审计展示。
+    # 从工具参数中提取最核心的查询语句，用于日志和审计展示。
     if not isinstance(arguments, dict):
         return ""
     return str(arguments.get("promql") or arguments.get("query") or arguments.get("alert_summary") or "")[:500]
 
 
 def _live_data_key(tool_name: str) -> str:
-    # 方法说明：把工具名映射成 live_data 里的字段名，例如 metrics、logs、topology。
+    # 把工具名映射成 live_data 里的字段名，例如 metrics、logs、topology。
     if tool_name == "prometheus_query_metrics":
         return "metrics"
     if tool_name == "aliyun_sls_query_logs":
@@ -1612,7 +1612,7 @@ def _live_data_key(tool_name: str) -> str:
 
 
 def _tool_result_count(payload: object) -> int:
-    # 方法说明：估算工具返回了多少条结果，便于判断查询是否真的命中数据。
+    # 估算工具返回了多少条结果，便于判断查询是否真的命中数据。
     if isinstance(payload, dict):
         for key in ("series", "matches", "dependencies"):
             value = payload.get(key)
@@ -1627,7 +1627,7 @@ def _tool_result_count(payload: object) -> int:
 
 
 def _tool_result_summary(payload: object) -> str:
-    # 方法说明：把工具返回内容压缩成一行摘要，避免卡片和日志被大段原始数据淹没。
+    # 把工具返回内容压缩成一行摘要，避免卡片和日志被大段原始数据淹没。
     if isinstance(payload, dict):
         summary = payload.get("summary")
         if summary:
@@ -1640,7 +1640,7 @@ def _tool_result_summary(payload: object) -> str:
 
 
 def _compact_tool_payload(payload: object) -> object:
-    # 方法说明：压缩工具原始返回，只保留后续诊断真正需要的关键字段。
+    # 压缩工具原始返回，只保留后续诊断真正需要的关键字段。
     if isinstance(payload, dict):
         compact: dict[str, object] = {}
         for key in ("provider", "tool", "query", "summary", "error", "total", "status"):
@@ -1665,13 +1665,13 @@ def _compact_tool_payload(payload: object) -> object:
 
 
 def _truncate_text(value: object, limit: int) -> str:
-    # 方法说明：截断超长文本，避免日志、卡片和状态字段过大。
+    # 截断超长文本，避免日志、卡片和状态字段过大。
     text = str(value or "")
     return text if len(text) <= limit else text[:limit] + "...[truncated]"
 
 
 def _fallback_plan_update(state: DiagnosisState, error: BaseException) -> DiagnosisState:
-    # 方法说明：模型生成方案失败时构造保守方案，提醒先补证据、避免高风险操作。
+    # 模型生成方案失败时构造保守方案，提醒先补证据、避免高风险操作。
     review = state.get("evidence_review") if isinstance(state.get("evidence_review"), dict) else {}
     missing = review.get("missing_evidence") if isinstance(review, dict) else []
     missing_items = [str(item) for item in missing] if isinstance(missing, list) else []
@@ -1696,7 +1696,7 @@ def _fallback_plan_update(state: DiagnosisState, error: BaseException) -> Diagno
 
 
 def _format_tool_plan(plan: dict[str, object]) -> str:
-    # 方法说明：把工具计划格式化成用户能看懂的卡片文本。
+    # 把工具计划格式化成用户能看懂的卡片文本。
     calls = [item for item in plan.get("tool_calls", []) if isinstance(item, dict)]
     if not calls:
         return f"Tool router skipped: {plan.get('reason') or 'no tools needed'}"
@@ -1707,7 +1707,7 @@ def _format_tool_plan(plan: dict[str, object]) -> str:
 
 
 def _format_tool_results(results: list[dict[str, object]]) -> str:
-    # 方法说明：把每次工具执行的状态、数量、耗时和摘要整理成展示文本。
+    # 把每次工具执行的状态、数量、耗时和摘要整理成展示文本。
     if not results:
         return "Tool executor completed: no tools were executed."
     lines = ["Tool executor completed:"]
@@ -1720,7 +1720,7 @@ def _format_tool_results(results: list[dict[str, object]]) -> str:
 
 
 def _format_evidence_review(review: dict[str, object]) -> str:
-    # 方法说明：把证据审查结果翻译成卡片文本，说明证据是否充足以及缺什么。
+    # 把证据审查结果翻译成卡片文本，说明证据是否充足以及缺什么。
     status = "sufficient" if review.get("is_sufficient") else "insufficient"
     return (
         f"Evidence review completed: {status}.\n"
@@ -1730,7 +1730,7 @@ def _format_evidence_review(review: dict[str, object]) -> str:
 
 
 def _format_live_data(live_data: dict[str, Any]) -> str:
-    # 方法说明：把实时指标、日志和拓扑压缩成简短中文摘要。
+    # 把实时指标、日志和拓扑压缩成简短中文摘要。
     if not live_data:
         return "未获得实时指标、日志或拓扑数据。"
     metrics = live_data.get("metrics") if isinstance(live_data.get("metrics"), dict) else {}
@@ -1757,7 +1757,7 @@ def _format_live_data(live_data: dict[str, Any]) -> str:
 
 
 def _format_plan_result(plan: object, evidence: list[str]) -> str:
-    # 方法说明：把推荐方案和最近证据整理成飞书卡片可展示的中文结果。
+    # 把推荐方案和最近证据整理成飞书卡片可展示的中文结果。
     if not isinstance(plan, dict):
         return f"方案生成完成：{plan}"
     summary = str(plan.get("summary") or plan.get("title") or "已生成诊断方案。")
@@ -1776,7 +1776,7 @@ def _format_plan_result(plan: object, evidence: list[str]) -> str:
 
 
 def _build_summary_prompt(state: TopicFlowState) -> str:
-    # 方法说明：生成最终总结提示词，要求模型按故障判断、证据、建议和风险输出中文结论。
+    # 生成最终总结提示词，要求模型按故障判断、证据、建议和风险输出中文结论。
     node_results: list[str] = []
     for item in state.get("node_results", []):
         if not isinstance(item, dict):

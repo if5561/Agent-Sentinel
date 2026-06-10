@@ -77,11 +77,11 @@ class StaticDocIngestor:
     batch_size: int = 16
 
     async def ensure_collection(self) -> None:
-        # 方法说明：确保 Milvus 中存在静态文档集合，第一次导入知识库前会自动创建。
+        # 确保 Milvus 中存在静态文档集合，第一次导入知识库前会自动创建。
         await self.milvus.ensure_static_doc_collection(self.collection_name, self.dimension)
 
     async def ingest_documents(self, docs: list[StaticDocument]) -> int:
-        # 方法说明：把静态文档分批向量化并写入 Milvus，返回成功入库的文档块数量。
+        # 把静态文档分批向量化并写入 Milvus，返回成功入库的文档块数量。
         if not docs:
             return 0
         await self.ensure_collection()
@@ -97,7 +97,7 @@ class StaticDocIngestor:
         return total
 
     async def _to_record(self, doc: StaticDocument) -> dict[str, Any]:
-        # 方法说明：把一条静态文档转换成 Milvus 记录，包含原文、向量和检索元数据。
+        # 把一条静态文档转换成 Milvus 记录，包含原文、向量和检索元数据。
         embedding = await self.embedding.embed(doc.text)
         now = int(time.time())
         # tags 既作为独立字段存储，也写入 metadata，便于检索结果展示和调试。
@@ -124,7 +124,7 @@ class StaticDocIngestor:
 
 
 def load_static_documents(path: str | Path) -> list[StaticDocument]:
-    # 方法说明：从文件或目录加载静态知识文档，支持 Markdown 手册和 JSONL 结构化文档。
+    # 从文件或目录加载静态知识文档，支持 Markdown 手册和 JSONL 结构化文档。
     root = Path(path)
     if not root.exists():
         raise FileNotFoundError(f"Static docs path does not exist: {root}")
@@ -141,7 +141,7 @@ def load_static_documents(path: str | Path) -> list[StaticDocument]:
 
 
 def _load_file(path: Path) -> list[StaticDocument]:
-    # 方法说明：根据文件后缀选择加载方式，Markdown 走标题切片，JSONL 逐行读取。
+    # 根据文件后缀选择加载方式，Markdown 走标题切片，JSONL 逐行读取。
     suffix = path.suffix.lower()
     if suffix in {".md", ".markdown"}:
         return _load_markdown_chunks(path)
@@ -156,7 +156,7 @@ def split_and_extract_metadata(file_path: str) -> list[Document]:
     The returned Documents can be embedded and upserted into vector stores such as
     Milvus; keep page_content as the chunk text and persist metadata alongside it.
     """
-    # 方法说明：按 Markdown 标题层级切分故障手册，并为每个片段补充故障类型、级别和关键词。
+    # 按 Markdown 标题层级切分故障手册，并为每个片段补充故障类型、级别和关键词。
 
     path = Path(file_path)
     raw = path.read_text(encoding="utf-8")
@@ -200,7 +200,7 @@ def split_and_extract_metadata(file_path: str) -> list[Document]:
 
 
 def _load_markdown_chunks(path: Path) -> list[StaticDocument]:
-    # 方法说明：把一个 Markdown 文件切成多个可检索文档块，并生成稳定的块 ID。
+    # 把一个 Markdown 文件切成多个可检索文档块，并生成稳定的块 ID。
     docs = split_and_extract_metadata(str(path))
     if not docs:
         return []
@@ -235,7 +235,7 @@ def _load_markdown_chunks(path: Path) -> list[StaticDocument]:
 
 
 def _load_markdown(path: Path) -> StaticDocument:
-    # 方法说明：把一个 Markdown 文件作为单个文档加载，保留 frontmatter 中的基础元数据。
+    # 把一个 Markdown 文件作为单个文档加载，保留 frontmatter 中的基础元数据。
     raw = path.read_text(encoding="utf-8")
     frontmatter, body = _split_frontmatter(raw)
     title = str(frontmatter.get("title") or _extract_markdown_title(body) or path.stem)
@@ -260,7 +260,7 @@ def _load_markdown(path: Path) -> StaticDocument:
 
 
 def _load_jsonl(path: Path) -> list[StaticDocument]:
-    # 方法说明：逐行读取 JSONL 文档，每一行都会转成一条可入库的静态知识记录。
+    # 逐行读取 JSONL 文档，每一行都会转成一条可入库的静态知识记录。
     docs: list[StaticDocument] = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
@@ -277,7 +277,7 @@ def _load_jsonl(path: Path) -> list[StaticDocument]:
 
 
 def _split_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
-    # 方法说明：拆分 Markdown 顶部的 frontmatter 元数据和正文内容。
+    # 拆分 Markdown 顶部的 frontmatter 元数据和正文内容。
     if not raw.startswith("---"):
         return {}, raw
     parts = raw.split("---", 2)
@@ -290,7 +290,7 @@ def _split_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
 
 
 def _extract_markdown_title(text: str) -> str | None:
-    # 方法说明：从 Markdown 正文中提取一级标题，作为文档默认标题。
+    # 从 Markdown 正文中提取一级标题，作为文档默认标题。
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("# "):
@@ -299,12 +299,12 @@ def _extract_markdown_title(text: str) -> str | None:
 
 
 def _build_section(h1: str, h2: str, h3: str) -> str:
-    # 方法说明：把标题层级拼成章节路径，后续检索结果可显示文档片段来自哪里。
+    # 把标题层级拼成章节路径，后续检索结果可显示文档片段来自哪里。
     return "_".join(_normalize_section_part(part) for part in (h1, h2, h3) if part.strip())
 
 
 def _normalize_section_part(value: str) -> str:
-    # 方法说明：清理章节名中的 Markdown 符号和空格，生成稳定的章节路径片段。
+    # 清理章节名中的 Markdown 符号和空格，生成稳定的章节路径片段。
     value = value.replace(r"\.", ".").strip()
     value = re.sub(r"^#+\s*", "", value)
     value = re.sub(r"\s+", "_", value)
@@ -312,7 +312,7 @@ def _normalize_section_part(value: str) -> str:
 
 
 def _detect_alert_category(h1: str) -> str:
-    # 方法说明：根据一级标题判断文档片段属于 MQ、Redis、MySQL 等哪类故障。
+    # 根据一级标题判断文档片段属于 MQ、Redis、MySQL 等哪类故障。
     mapping = (
         ("消息队列", "MQ"),
         ("应用服务", "应用服务"),
@@ -331,7 +331,7 @@ def _detect_alert_category(h1: str) -> str:
 
 
 def _detect_severity(page_content: str) -> str:
-    # 方法说明：根据片段中的严重程度关键词推断 P0/P1/P2 级别。
+    # 根据片段中的严重程度关键词推断 P0/P1/P2 级别。
     if any(token in page_content for token in ("核心业务致命故障", "高危", "雪崩")):
         return "P0"
     if any(token in page_content for token in ("严重", "暴涨", "飙升")):
@@ -340,7 +340,7 @@ def _detect_severity(page_content: str) -> str:
 
 
 def _extract_error_codes(page_content: str) -> list[str]:
-    # 方法说明：从文档片段中提取常见错误码或异常短语，供检索过滤和展示使用。
+    # 从文档片段中提取常见错误码或异常短语，供检索过滤和展示使用。
     seen: set[str] = set()
     values: list[str] = []
     for match in ERROR_CODE_PATTERN.finditer(page_content):
@@ -353,7 +353,7 @@ def _extract_error_codes(page_content: str) -> list[str]:
 
 
 def _extract_keywords(page_content: str) -> list[str]:
-    # 方法说明：从粗体词、关键小节和高频词中抽取代表文档语义的关键词。
+    # 从粗体词、关键小节和高频词中抽取代表文档语义的关键词。
     candidates: list[str] = []
     # 粗体词通常是手册中的关键概念，优先作为候选关键词。
     candidates.extend(_clean_keyword(item) for item in re.findall(r"\*\*([^*]{2,40})\*\*", page_content))
@@ -382,19 +382,19 @@ def _extract_keywords(page_content: str) -> list[str]:
 
 
 def _keyword_tokens(text: str) -> list[str]:
-    # 方法说明：从中英文混合文本里提取可作为关键词的短词片段。
+    # 从中英文混合文本里提取可作为关键词的短词片段。
     tokens = re.findall(r"[\u4e00-\u9fffA-Za-z0-9][\u4e00-\u9fffA-Za-z0-9+/._-]{1,24}", text)
     return [token for token in tokens if len(token) >= 2]
 
 
 def _clean_keyword(value: str) -> str:
-    # 方法说明：去掉关键词周围的 Markdown 符号和标点，限制关键词长度。
+    # 去掉关键词周围的 Markdown 符号和标点，限制关键词长度。
     value = re.sub(r"[*`#>\-：:，,。；;、（）()\[\]【】]", "", str(value)).strip()
     return value[:40]
 
 
 def _to_tags(value: Any) -> list[str]:
-    # 方法说明：把 frontmatter 中的标签字段统一转换成字符串列表。
+    # 把 frontmatter 中的标签字段统一转换成字符串列表。
     if value is None:
         return []
     if isinstance(value, str):
@@ -405,12 +405,12 @@ def _to_tags(value: Any) -> list[str]:
 
 
 def _to_dict(value: Any) -> dict[str, Any]:
-    # 方法说明：确保 metadata 字段一定是字典，写错类型时退回空字典。
+    # 确保 metadata 字段一定是字典，写错类型时退回空字典。
     return value if isinstance(value, dict) else {}
 
 
 def _to_int(value: Any, default: int) -> int:
-    # 方法说明：把 frontmatter 里的时间戳等字段转成整数，失败时使用默认值。
+    # 把 frontmatter 里的时间戳等字段转成整数，失败时使用默认值。
     try:
         return int(value)
     except (TypeError, ValueError):

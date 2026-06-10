@@ -35,7 +35,7 @@ class AliyunARMSClient:
         app_id: str = "",
         timeout_seconds: int = 10,
     ) -> None:
-        # 方法说明：保存 ARMS 鉴权、地域、应用 ID 和超时配置，SDK 客户端等到首次查询时再创建。
+        # 保存 ARMS 鉴权、地域、应用 ID 和超时配置，SDK 客户端等到首次查询时再创建。
         self._access_key_id = access_key_id
         self._access_key_secret = access_key_secret
         self._region_id = region_id
@@ -45,7 +45,7 @@ class AliyunARMSClient:
 
     def _get_client(self):
         """延迟初始化 ARMS 客户端"""
-        # 方法说明：首次查询指标时才创建 ARMS SDK 客户端，避免服务启动阶段就依赖云 SDK。
+        # 首次查询指标时才创建 ARMS SDK 客户端，避免服务启动阶段就依赖云 SDK。
         if self._client is None:
             try:
                 from alibabacloud_arms20190808.client import Client as ARMSClient
@@ -81,7 +81,7 @@ class AliyunARMSClient:
         Returns:
             包含 QPS、延迟、错误率等指标的字典
         """
-        # 方法说明：查询指定应用最近一段时间的核心监控指标，例如 QPS、延迟、错误率和资源使用率。
+        # 查询指定应用最近一段时间的核心监控指标，例如 QPS、延迟、错误率和资源使用率。
         import time
 
         client = self._get_client()
@@ -123,7 +123,7 @@ class AliyunARMSClient:
         2. JVM 指标（堆内存、GC）
         3. 系统指标（CPU、内存）
         """
-        # 方法说明：同步调用 ARMS 多个接口，把应用概览、JVM 和线程池指标汇总成一个字典。
+        # 同步调用 ARMS 多个接口，把应用概览、JVM 和线程池指标汇总成一个字典。
         result = {}
 
         try:
@@ -180,7 +180,7 @@ class AliyunARMSClient:
         end_time: int,
     ) -> dict[str, Any]:
         """查询 JVM 指标"""
-        # 方法说明：查询 JVM 堆、非堆和 GC 指标，用来判断是否存在内存或 GC 压力。
+        # 查询 JVM 堆、非堆和 GC 指标，用来判断是否存在内存或 GC 压力。
         from alibabacloud_arms20190808 import models as arms_models
 
         # 查询 JVM 堆内存
@@ -227,7 +227,7 @@ class AliyunARMSClient:
         end_time: int,
     ) -> dict[str, Any]:
         """查询线程池指标"""
-        # 方法说明：查询活跃线程数和线程池大小，用来判断线程池是否接近打满。
+        # 查询活跃线程数和线程池大小，用来判断线程池是否接近打满。
         from alibabacloud_arms20190808 import models as arms_models
 
         # 查询活跃线程数
@@ -257,7 +257,7 @@ class AliyunARMSClient:
 
     def _extract_latest_value(self, values: list) -> float:
         """从指标值列表中提取最新值"""
-        # 方法说明：从时间序列里取最新点并转成数字，缺失或格式异常时返回 0。
+        # 从时间序列里取最新点并转成数字，缺失或格式异常时返回 0。
         if not values:
             return 0.0
         try:
@@ -282,7 +282,7 @@ class AliyunARMSClient:
         Returns:
             告警列表
         """
-        # 方法说明：查询 ARMS 最近告警事件，作为诊断时判断服务健康状态的补充证据。
+        # 查询 ARMS 最近告警事件，作为诊断时判断服务健康状态的补充证据。
         client = self._get_client()
         app_id = app_id or self._app_id
 
@@ -315,7 +315,7 @@ class AliyunARMSClient:
         end_time: int,
     ) -> list[dict[str, Any]]:
         """查询告警的具体实现"""
-        # 方法说明：同步调用 ARMS 告警接口，并把云厂商字段整理成项目内部使用的告警结构。
+        # 同步调用 ARMS 告警接口，并把云厂商字段整理成项目内部使用的告警结构。
         try:
             from alibabacloud_arms20190808 import models as arms_models
 
@@ -351,7 +351,7 @@ class ARMSMetricsProvider:
     """基于 ARMS 的监控指标提供者"""
 
     def __init__(self, client: AliyunARMSClient) -> None:
-        # 方法说明：绑定 ARMS 客户端，把云监控查询能力包装成项目统一的指标 provider。
+        # 绑定 ARMS 客户端，把云监控查询能力包装成项目统一的指标 provider。
         self._client = client
 
     async def get_metrics(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
@@ -364,7 +364,7 @@ class ARMSMetricsProvider:
         Returns:
             包含监控指标、告警信息和健康状态的字典
         """
-        # 方法说明：并发查询应用指标和告警，再计算健康状态和可能瓶颈，供诊断方案参考。
+        # 并发查询应用指标和告警，再计算健康状态和可能瓶颈，供诊断方案参考。
         logger.info("Fetching ARMS metrics summary_chars=%s group_id=%s", len(alert_summary), group_id)
 
         # 并发查询指标和告警
@@ -408,7 +408,7 @@ class ARMSMetricsProvider:
 
         根据指标和告警综合评估应用健康状态。
         """
-        # 方法说明：用严重告警、错误率、延迟、CPU 和内存等信号粗略判断应用是否健康。
+        # 用严重告警、错误率、延迟、CPU 和内存等信号粗略判断应用是否健康。
         # 检查是否有严重告警
         critical_alerts = [a for a in alerts if a.get("severity") in ["严重", "错误"]]
         if critical_alerts:
@@ -440,7 +440,7 @@ class ARMSMetricsProvider:
 
     def _analyze_bottlenecks(self, metrics: dict) -> list[str]:
         """分析性能瓶颈"""
-        # 方法说明：从指标中提取可读的瓶颈描述，例如 CPU 高、延迟高或线程池打满。
+        # 从指标中提取可读的瓶颈描述，例如 CPU 高、延迟高或线程池打满。
         bottlenecks = []
 
         # 检查 CPU
