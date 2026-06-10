@@ -47,14 +47,21 @@ class DiagnosisWorkflow:
         case_store: HistoryCaseStore | None = None,
         checkpointer: Any | None = None,
     ) -> None:
-        # 方法说明：保存诊断流程需要的依赖，例如模型、飞书发送器、检索器和人工确认记录。
+        # 保存运行配置，供流程构建和节点执行时读取。
         self.settings = settings
+        # 保存大模型执行器，用于诊断分析和结果生成。
         self.llm = llm
+        # 保存飞书发送器，用于推送人工确认消息。
         self.sender = sender
+        # 保存人工决策存储，用于记录和查询确认结果。
         self.decision_store = decision_store
+        # 优先使用外部传入的检索器，否则根据配置构建默认检索器。
         self.retriever = retriever or build_retriever(settings)
+        # 优先使用外部传入的案例存储，否则根据配置构建历史案例存储。
         self.case_store = case_store if case_store is not None else build_history_case_store(settings)
+        # 优先使用外部传入的检查点器，否则使用内存检查点器。
         self.checkpointer = checkpointer or InMemorySaver()
+        # 缓存已编译的流程图，避免重复构建。
         self._compiled: Any | None = None
 
     def compile(self) -> Any:
@@ -63,22 +70,29 @@ class DiagnosisWorkflow:
             return self._compiled
         # workflow.yaml 负责声明节点和边，代码里的 registry 只提供可执行函数映射。
         workflow_config = load_yaml(self.settings.aiops_workflow_config_path)
+        # 初始化状态图，使用 DiagnosisState 作为图的状态类型
         graph = StateGraph(DiagnosisState)
+        # 获取节点名称到可执行函数的映射
         registry = self._node_registry()
 
         nodes = workflow_config.get("nodes", [])
         if not nodes:
             raise ValueError("workflow.yaml must define nodes.")
+        # 遍历配置中的节点定义，逐一注册到状态图
         for item in nodes:
             name = str(item["name"])
             graph.add_node(name, registry[name])
 
+        # 设置图的入口节点为配置中的第一个节点
         graph.set_entry_point(str(nodes[0]["name"]))
 
+        # 注册普通边，表示节点之间的固定跳转
         for edge in workflow_config.get("edges", []):
             graph.add_edge(str(edge["from"]), str(edge["to"]))
 
+        # 获取条件路由函数映射
         route_registry = self._route_registry()
+        # 注册条件边，根据运行时状态决定跳转目标
         for edge in workflow_config.get("conditional_edges", []):
             source = str(edge["from"])
             condition_name = str(edge["condition"])
@@ -89,6 +103,7 @@ class DiagnosisWorkflow:
             }
             graph.add_conditional_edges(source, route_registry[condition_name], mapping)
 
+        # 编译图并注入检查点持久化器，支持断点续跑和状态恢复
         self._compiled = graph.compile(checkpointer=self.checkpointer)
         logger.info("LangGraph workflow compiled nodes=%s", [item["name"] for item in nodes])
         return self._compiled
