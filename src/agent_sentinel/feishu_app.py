@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 class FeishuBotClient:
     def __init__(self, settings: Settings, timeout: int = 15) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self.settings = settings
         self.timeout = timeout
         self._token: str | None = None
@@ -24,6 +25,7 @@ class FeishuBotClient:
         self._lock = threading.Lock()
 
     def is_configured(self) -> bool:
+        # 方法说明：校验输入或状态是否满足继续处理的条件。
         return bool(self.settings.feishu_app_id and self.settings.feishu_app_secret)
 
     def send_text_to_chat(
@@ -35,16 +37,19 @@ class FeishuBotClient:
         mention_open_id: str | None = None,
         mention_name: str | None = None,
     ) -> bool:
+        # 方法说明：将数据发送到外部通道，并隔离调用细节。
         self._ensure_configured()
         token = self._get_tenant_access_token()
         base_url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages"
 
         final_text = text
         if mention_open_id:
+            # 飞书文本消息需要用 at 标签显式 mention 用户，普通 @ 文本不会触发客户端高亮。
             display_name = mention_name or "user"
             final_text = f'<at user_id="{mention_open_id}">@{display_name}</at> {text}'
 
         if thread_root_message_id:
+            # 有 root message 时回复到原话题，避免诊断进度在群里刷成多条独立消息。
             url = f"{base_url}/{thread_root_message_id}/reply"
             payload = {
                 "msg_type": "text",
@@ -52,6 +57,7 @@ class FeishuBotClient:
                 "reply_in_thread": True,
             }
         else:
+            # 无话题上下文时退回普通群消息发送。
             url = f"{base_url}?receive_id_type=chat_id"
             payload = {
                 "receive_id": chat_id,
@@ -96,6 +102,7 @@ class FeishuBotClient:
         *,
         thread_root_message_id: str | None = None,
     ) -> bool:
+        # 方法说明：将数据发送到外部通道，并隔离调用细节。
         self._ensure_configured()
         token = self._get_tenant_access_token()
         base_url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages"
@@ -140,6 +147,7 @@ class FeishuBotClient:
 
     def send_topic_text(self, chat_id: str, root_message_id: str, text: str) -> str | None:
         """Reply in the source message thread and return the new Feishu message_id."""
+        # 方法说明：将数据发送到外部通道，并隔离调用细节。
         self._ensure_configured()
         token = self._get_tenant_access_token()
         url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages/{root_message_id}/reply"
@@ -177,6 +185,7 @@ class FeishuBotClient:
 
     def send_topic_card(self, chat_id: str, root_message_id: str, card: dict[str, object]) -> str | None:
         """Send an interactive card in the source message thread and return message_id."""
+        # 方法说明：将数据发送到外部通道，并隔离调用细节。
         self._ensure_configured()
         token = self._get_tenant_access_token()
         url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages/{root_message_id}/reply"
@@ -214,8 +223,10 @@ class FeishuBotClient:
 
     def update_message_card(self, message_id: str, card: dict[str, object]) -> bool:
         """Best-effort update for a bot-sent interactive card."""
+        # 方法说明：更新已有资源或状态对象。
         self._ensure_configured()
         token = self._get_tenant_access_token()
+        # PATCH 原卡片消息是单卡片交互的关键，避免每个节点都发送一张新卡片。
         url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages/{message_id}"
         payload = {"content": json.dumps(card, ensure_ascii=False)}
         started = time.perf_counter()
@@ -239,6 +250,7 @@ class FeishuBotClient:
 
     async def update_message_card_async(self, message_id: str, card: dict[str, object]) -> bool:
         """Async PATCH update for a bot-sent interactive card."""
+        # 方法说明：更新已有资源或状态对象。
         self._ensure_configured()
         token = await asyncio.to_thread(self._get_tenant_access_token)
         url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages/{message_id}"
@@ -270,6 +282,7 @@ class FeishuBotClient:
         page_size: int = 20,
         sort_type: str = "ByCreateTimeDesc",
     ) -> list[dict[str, object]]:
+        # 方法说明：读取并返回当前流程需要的数据。
         self._ensure_configured()
         token = self._get_tenant_access_token()
         url = f"{self.settings.feishu_api_base_url.rstrip('/')}/open-apis/im/v1/messages"
@@ -297,16 +310,19 @@ class FeishuBotClient:
         return [item for item in items if isinstance(item, dict)]
 
     def _ensure_configured(self) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not self.is_configured():
             raise RuntimeError("FEISHU_APP_ID or FEISHU_APP_SECRET is not configured.")
 
     def _get_tenant_access_token(self) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         now = time.time()
         with self._lock:
             if self._token and now < self._token_expire_at:
                 logger.debug("Feishu tenant access token cache hit expires_in_seconds=%s", int(self._token_expire_at - now))
                 return self._token
 
+            # tenant_access_token 全局复用，刷新时加锁避免并发请求同时打到飞书鉴权接口。
             url = (
                 f"{self.settings.feishu_api_base_url.rstrip('/')}"
                 "/open-apis/auth/v3/tenant_access_token/internal"
@@ -334,15 +350,18 @@ class FeishuBotClient:
 
             expire = int(result.get("expire", 7200))
             self._token = token
+            # 提前 120 秒过期，降低临界点使用已失效 token 的概率。
             self._token_expire_at = now + max(expire - 120, 60)
             logger.info("Feishu tenant access token refresh completed expire_seconds=%s elapsed_ms=%s", expire, int((time.perf_counter() - started) * 1000))
             return token
 
 
 def extract_text_from_message_content(content: str | None) -> str:
+    # 方法说明：解析输入内容，转换为业务逻辑使用的结构。
     if not content:
         return ""
     try:
+        # 飞书 text 消息 content 通常是 JSON 字符串；解析失败时按原始文本兜底。
         payload = json.loads(content)
     except json.JSONDecodeError:
         return content

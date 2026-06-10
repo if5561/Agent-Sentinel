@@ -34,22 +34,27 @@ class FeishuWebhookNotifier:
         enabled: bool = True,
         timeout: int = 10,
     ) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self.webhook_url = webhook_url
         self.secret = secret
         self.enabled = enabled
         self.timeout = timeout
 
     def is_configured(self) -> bool:
+        # 方法说明：校验输入或状态是否满足继续处理的条件。
         return self.enabled and bool(self.webhook_url)
 
     def _build_sign(self, timestamp: str) -> str:
+        # 方法说明：构建并返回调用方需要的对象。
         if not self.secret:
             return ""
+        # 飞书自定义机器人签名格式为 timestamp + "\n" + secret，再做 HMAC-SHA256。
         string_to_sign = f"{timestamp}\n{self.secret}".encode("utf-8")
         hmac_code = hmac.new(string_to_sign, digestmod=hashlib.sha256).digest()
         return base64.b64encode(hmac_code).decode("utf-8")
 
     def send_text(self, title: str, message: str) -> bool:
+        # 方法说明：将数据发送到外部通道，并隔离调用细节。
         if not self.is_configured():
             logger.info("Feishu alert skipped because webhook is not configured.")
             return False
@@ -67,6 +72,7 @@ class FeishuWebhookNotifier:
         }
 
         if self.secret:
+            # 带 secret 的 webhook 必须附带 timestamp 和 sign，防止消息被伪造。
             timestamp = str(int(time.time()))
             payload["timestamp"] = timestamp
             payload["sign"] = self._build_sign(timestamp)
@@ -89,6 +95,7 @@ class RealtimeAlertService:
         dedup_window_seconds: int = 60,
         store_limit: int = 100,
     ) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self.notifier = notifier
         self.app_env = app_env
         self.title_prefix = title_prefix
@@ -106,6 +113,7 @@ class RealtimeAlertService:
         dedupe_key: str | None = None,
         tags: list[str] | None = None,
     ) -> tuple[bool, bool]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         normalized_level = level.upper()
         event = AlertEvent(
             source=source,
@@ -118,6 +126,7 @@ class RealtimeAlertService:
         )
 
         deduplicated = self._should_deduplicate(event)
+        # 即使被去重，也记录到 recent_events，便于接口侧看到最近发生过的重复告警。
         self._remember(event)
         if deduplicated:
             logger.info("Alert deduplicated for key=%s", dedupe_key)
@@ -129,6 +138,8 @@ class RealtimeAlertService:
         return dispatched, False
 
     def report_exception(self, scene: str, exc: Exception) -> tuple[bool, bool]:
+        # 异常告警使用 scene + 异常类型 + 消息做去重键，避免同一错误短时间刷屏。
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         details = (
             f"scene: {scene}\n"
             f"exception: {type(exc).__name__}\n"
@@ -145,15 +156,18 @@ class RealtimeAlertService:
         )
 
     def recent_alerts(self, limit: int = 20) -> list[dict[str, object]]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         records = list(self._recent_events)[-limit:]
         return [asdict(record) for record in reversed(records)]
 
     def _should_deduplicate(self, event: AlertEvent) -> bool:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not event.dedupe_key:
             return False
 
         now = time.time()
         with self._lock:
+            # 去重缓存和最近事件可能被多个请求线程同时访问，必须在锁内维护。
             self._prune_old_keys(now)
             last_seen = self._dedupe_cache.get(event.dedupe_key)
             if last_seen is not None and now - last_seen < self.dedup_window_seconds:
@@ -162,6 +176,7 @@ class RealtimeAlertService:
             return False
 
     def _prune_old_keys(self, now: float) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         expired = [
             key
             for key, last_seen in self._dedupe_cache.items()
@@ -171,10 +186,12 @@ class RealtimeAlertService:
             self._dedupe_cache.pop(key, None)
 
     def _remember(self, event: AlertEvent) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         with self._lock:
             self._recent_events.append(event)
 
     def _format_message(self, event: AlertEvent) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         lines = [
             f"env: {self.app_env}",
             f"source: {event.source}",

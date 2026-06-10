@@ -13,6 +13,7 @@ _provider = None
 
 def _get_provider():
     """获取工具提供者（延迟初始化单例）"""
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     global _provider
     if _provider is None:
         from agent_sentinel.config import get_settings
@@ -25,6 +26,7 @@ def _get_provider():
 
 
 async def fetch_live_data_node(state: DiagnosisState) -> DiagnosisState:
+    # 方法说明：读取并返回当前流程需要的数据。
     logger.info("Node fetch_live_data started")
     group_id = state.get("chat_id")
 

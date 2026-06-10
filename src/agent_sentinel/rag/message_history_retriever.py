@@ -25,6 +25,7 @@ class MessageHistoryRetriever:
     pruning_config: dict | None = None
 
     async def retrieve(self, query: str, filters: RagFilters | None = None) -> list[RetrievedDoc]:
+        # 方法说明：从配置的后端或数据集中检索匹配内容。
         started = time.perf_counter()
         logger.info(
             "Message history RAG start collection=%s query_chars=%s recall_top_k=%s prune_top_k=%s pruning_enabled=%s default_days=%s",
@@ -62,6 +63,7 @@ class MessageHistoryRetriever:
         return docs
 
     def _prune(self, query: str, docs: list[RetrievedDoc]) -> list[RetrievedDoc]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         top_k = self.prune_top_k or self.top_k
         if not self.pruning_enabled or len(docs) <= top_k:
             logger.info(
@@ -82,6 +84,7 @@ class MessageHistoryRetriever:
         return [_apply_pruning_scores(docs[int(item["_index"])], item) for item in pruned]
 
     def _build_message_expr(self, filters: RagFilters | None) -> str | None:
+        # 方法说明：构建并返回调用方需要的对象。
         clauses: list[str] = ['doc_type == "alert_case"']
         if self.default_days > 0:
             min_created_at = int(time.time()) - self.default_days * 86400
@@ -89,6 +92,7 @@ class MessageHistoryRetriever:
         return " and ".join(clauses) if clauses else None
 
     def _recency_boost(self, now: int, created_at: int | None) -> float:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not created_at:
             return 1.0
         age_days = max((now - created_at) / 86400, 0)
@@ -100,6 +104,7 @@ class MessageHistoryRetriever:
 
 
 def _doc_to_candidate(index: int, doc: RetrievedDoc, source_type: str) -> dict:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     return {
         "_index": index,
         "text": doc.text,
@@ -110,6 +115,7 @@ def _doc_to_candidate(index: int, doc: RetrievedDoc, source_type: str) -> dict:
 
 
 def _apply_pruning_scores(doc: RetrievedDoc, candidate: dict) -> RetrievedDoc:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     metadata = dict(doc.metadata)
     for key in ("metadata_score", "combined_score", "rerank_score"):
         if key in candidate:
@@ -119,6 +125,7 @@ def _apply_pruning_scores(doc: RetrievedDoc, candidate: dict) -> RetrievedDoc:
 
 
 def _format_doc_scores(docs: list[RetrievedDoc], limit: int = 5) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not docs:
         return "[]"
     values = []

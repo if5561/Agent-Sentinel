@@ -35,6 +35,7 @@ class AliyunARMSClient:
         app_id: str = "",
         timeout_seconds: int = 10,
     ) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self._access_key_id = access_key_id
         self._access_key_secret = access_key_secret
         self._region_id = region_id
@@ -44,6 +45,7 @@ class AliyunARMSClient:
 
     def _get_client(self):
         """延迟初始化 ARMS 客户端"""
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self._client is None:
             try:
                 from alibabacloud_arms20190808.client import Client as ARMSClient
@@ -79,6 +81,7 @@ class AliyunARMSClient:
         Returns:
             包含 QPS、延迟、错误率等指标的字典
         """
+        # 方法说明：读取并返回当前流程需要的数据。
         import time
 
         client = self._get_client()
@@ -120,6 +123,7 @@ class AliyunARMSClient:
         2. JVM 指标（堆内存、GC）
         3. 系统指标（CPU、内存）
         """
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         result = {}
 
         try:
@@ -176,6 +180,7 @@ class AliyunARMSClient:
         end_time: int,
     ) -> dict[str, Any]:
         """查询 JVM 指标"""
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         from alibabacloud_arms20190808 import models as arms_models
 
         # 查询 JVM 堆内存
@@ -222,6 +227,7 @@ class AliyunARMSClient:
         end_time: int,
     ) -> dict[str, Any]:
         """查询线程池指标"""
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         from alibabacloud_arms20190808 import models as arms_models
 
         # 查询活跃线程数
@@ -251,6 +257,7 @@ class AliyunARMSClient:
 
     def _extract_latest_value(self, values: list) -> float:
         """从指标值列表中提取最新值"""
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not values:
             return 0.0
         try:
@@ -275,6 +282,7 @@ class AliyunARMSClient:
         Returns:
             告警列表
         """
+        # 方法说明：读取并返回当前流程需要的数据。
         client = self._get_client()
         app_id = app_id or self._app_id
 
@@ -307,6 +315,7 @@ class AliyunARMSClient:
         end_time: int,
     ) -> list[dict[str, Any]]:
         """查询告警的具体实现"""
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             from alibabacloud_arms20190808 import models as arms_models
 
@@ -342,6 +351,7 @@ class ARMSMetricsProvider:
     """基于 ARMS 的监控指标提供者"""
 
     def __init__(self, client: AliyunARMSClient) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self._client = client
 
     async def get_metrics(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
@@ -354,6 +364,7 @@ class ARMSMetricsProvider:
         Returns:
             包含监控指标、告警信息和健康状态的字典
         """
+        # 方法说明：读取并返回当前流程需要的数据。
         logger.info("Fetching ARMS metrics summary_chars=%s group_id=%s", len(alert_summary), group_id)
 
         # 并发查询指标和告警
@@ -397,6 +408,7 @@ class ARMSMetricsProvider:
 
         根据指标和告警综合评估应用健康状态。
         """
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         # 检查是否有严重告警
         critical_alerts = [a for a in alerts if a.get("severity") in ["严重", "错误"]]
         if critical_alerts:
@@ -428,6 +440,7 @@ class ARMSMetricsProvider:
 
     def _analyze_bottlenecks(self, metrics: dict) -> list[str]:
         """分析性能瓶颈"""
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         bottlenecks = []
 
         # 检查 CPU

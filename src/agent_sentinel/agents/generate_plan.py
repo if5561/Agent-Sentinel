@@ -24,6 +24,8 @@ class PlanOutput(BaseModel):
     @field_validator("recommended_plan", mode="before")
     @classmethod
     def normalize_recommended_plan(cls, value: Any) -> dict[str, Any]:
+        # 模型输出可能是 dict/list/string，统一归一化成 dict 方便后续节点消费。
+        # 方法说明：解析输入内容，转换为业务逻辑使用的结构。
         if isinstance(value, dict):
             return value
         if isinstance(value, list):
@@ -35,8 +37,10 @@ class PlanOutput(BaseModel):
 
 @async_retry(max_attempts=2)
 async def generate_plan_node(state: DiagnosisState, llm: LLMExecutor) -> DiagnosisState:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     logger.info("Node generate_plan started")
     parser = PydanticOutputParser(pydantic_object=PlanOutput)
+    # 方案生成只读取前面节点沉淀的摘要、检索文档、实时数据和证据链。
     prompt_variables = {
         "alert_summary": state.get("alert_summary", ""),
         "retrieved_docs": state.get("retrieved_docs", []),
@@ -44,6 +48,7 @@ async def generate_plan_node(state: DiagnosisState, llm: LLMExecutor) -> Diagnos
         "evidence": state.get("evidence", []),
     }
     prompt = format_prompt("generate_plan", prompt_variables)
+    # 把 Pydantic 的格式说明追加进 prompt，降低模型返回非 JSON/非结构化文本的概率。
     prompt = f"{prompt}\n\n{parser.get_format_instructions()}"
     async with asyncio.timeout(llm_timeout_seconds(llm)):
         raw = await llm.call(
@@ -57,6 +62,7 @@ async def generate_plan_node(state: DiagnosisState, llm: LLMExecutor) -> Diagnos
         )
     parsed = parser.parse(raw)
     logger.info("Node generate_plan completed evidence=%s", len(parsed.evidence))
+    # 返回 state 增量，由 LangGraph 合并到全局诊断状态。
     return {
         "recommended_plan": parsed.recommended_plan,
         "evidence": append_evidence(state, *parsed.evidence),

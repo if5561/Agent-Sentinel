@@ -21,6 +21,7 @@ async def feedback_learning_node(
     case_store: HistoryCaseStore | None = None,
     enabled: bool = True,
 ) -> DiagnosisState:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     logger.info("Node feedback_learning started enabled=%s", enabled)
     if not enabled or not case_store or not state.get("chat_id"):
         return {

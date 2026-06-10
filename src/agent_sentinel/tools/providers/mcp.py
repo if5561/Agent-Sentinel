@@ -30,12 +30,14 @@ class MCPStdioClient:
     """Minimal MCP JSON-RPC client for stdio servers."""
 
     def __init__(self, config: MCPToolConfig) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self._config = config
         self._request_id = 0
         self._process: asyncio.subprocess.Process | None = None
         self._lock = asyncio.Lock()
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         async with self._lock:
             await self._ensure_started()
             return await self._request(
@@ -47,6 +49,7 @@ class MCPStdioClient:
             )
 
     async def close(self) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         process = self._process
         self._process = None
         if process is None or process.returncode is not None:
@@ -59,6 +62,7 @@ class MCPStdioClient:
             await process.wait()
 
     async def _ensure_started(self) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self._process is not None and self._process.returncode is None:
             return
         if not self._config.command:
@@ -81,11 +85,13 @@ class MCPStdioClient:
         await self._notify("notifications/initialized", {})
 
     async def _notify(self, method: str, params: dict[str, Any]) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         process = self._active_process()
         payload = {"jsonrpc": "2.0", "method": method, "params": params}
         await self._write_message(process, payload)
 
     async def _request(self, method: str, params: dict[str, Any]) -> Any:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         process = self._active_process()
         self._request_id += 1
         request_id = self._request_id
@@ -107,6 +113,7 @@ class MCPStdioClient:
             return response.get("result")
 
     def _active_process(self) -> asyncio.subprocess.Process:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         process = self._process
         if process is None or process.returncode is not None:
             raise MCPClientError("MCP server is not running")
@@ -115,6 +122,7 @@ class MCPStdioClient:
         return process
 
     async def _write_message(self, process: asyncio.subprocess.Process, payload: dict[str, Any]) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if process.stdin is None:
             raise MCPClientError("MCP server stdin is unavailable")
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -123,6 +131,7 @@ class MCPStdioClient:
         await process.stdin.drain()
 
     async def _read_message(self, process: asyncio.subprocess.Process) -> dict[str, Any]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if process.stdout is None:
             raise MCPClientError("MCP server stdout is unavailable")
         headers: dict[str, str] = {}
@@ -144,10 +153,12 @@ class MCPStdioClient:
 
 class MCPLogsProvider:
     def __init__(self, client: MCPStdioClient, config: MCPToolConfig) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self._client = client
         self._config = config
 
     async def query_logs(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
+        # 方法说明：从配置的后端或数据集中检索匹配内容。
         logger.info("Querying MCP SLS logs summary_chars=%s group_id=%s", len(alert_summary), group_id)
         result = await self._client.call_tool(
             self._config.sls_tool,
@@ -174,10 +185,12 @@ class MCPLogsProvider:
 
 class MCPMetricsProvider:
     def __init__(self, client: MCPStdioClient, config: MCPToolConfig) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self._client = client
         self._config = config
 
     async def get_metrics(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
+        # 方法说明：读取并返回当前流程需要的数据。
         logger.info("Querying MCP Prometheus metrics summary_chars=%s group_id=%s", len(alert_summary), group_id)
         result = await self._client.call_tool(
             self._config.prometheus_tool,
@@ -204,6 +217,7 @@ class MCPMetricsProvider:
 
 class MCPToolsProvider:
     def __init__(self, config: MCPToolConfig, client: MCPStdioClient | None = None) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self._config = config
         self._client = client or MCPStdioClient(config)
         self._metrics = MCPMetricsProvider(self._client, config)
@@ -212,17 +226,21 @@ class MCPToolsProvider:
 
     @property
     def metrics(self) -> MCPMetricsProvider:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         return self._metrics
 
     @property
     def logs(self) -> MCPLogsProvider:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         return self._logs
 
     @property
     def topology(self) -> MockTopologyProvider:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         return self._topology
 
     async def fetch_all(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
+        # 方法说明：读取并返回当前流程需要的数据。
         metrics, logs, topology = await asyncio.gather(
             self._metrics.get_metrics(alert_summary, group_id),
             self._logs.query_logs(alert_summary, group_id),
@@ -232,6 +250,7 @@ class MCPToolsProvider:
 
 
 def _extract_tool_payload(result: Any) -> Any:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not isinstance(result, dict):
         return result
     content = result.get("content")

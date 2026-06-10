@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class FeishuSender:
     def __init__(self, client: FeishuBotClient | None = None) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self.client = client
 
     async def send_message(
@@ -22,6 +23,7 @@ class FeishuSender:
         mention_open_id: str | None = None,
         mention_name: str | None = None,
     ) -> bool:
+        # 方法说明：将数据发送到外部通道，并隔离调用细节。
         if not chat_id or not self.client or not self.client.is_configured():
             logger.info("Feishu text skipped chat_id=%s text=%s", chat_id, text)
             return False
@@ -45,6 +47,7 @@ class FeishuSender:
         *,
         thread_root_message_id: str | None = None,
     ) -> bool:
+        # 方法说明：将数据发送到外部通道，并隔离调用细节。
         if not chat_id or not self.client or not self.client.is_configured():
             logger.info("Feishu card skipped chat_id=%s decision_id=%s", chat_id, decision_id)
             return False
@@ -67,6 +70,7 @@ class FeishuSender:
         candidate_index: int,
         thread_root_message_id: str | None = None,
     ) -> bool:
+        # 方法说明：将数据发送到外部通道，并隔离调用细节。
         if not chat_id or not self.client or not self.client.is_configured():
             logger.info("Feishu cache card skipped chat_id=%s decision_id=%s", chat_id, decision_id)
             return False
@@ -95,6 +99,7 @@ class FeishuSender:
         *,
         thread_root_message_id: str | None = None,
     ) -> bool:
+        # 方法说明：将数据发送到外部通道，并隔离调用细节。
         if not chat_id or not self.client or not self.client.is_configured():
             logger.info("Feishu feedback card skipped chat_id=%s decision_id=%s", chat_id, decision_id)
             return False
@@ -114,6 +119,7 @@ def build_confirmation_card(
     plan: dict[str, Any],
     evidence: list[str],
 ) -> dict[str, Any]:
+    # 方法说明：构建并返回调用方需要的对象。
     plan_summary = str(plan.get("summary") or plan)[:900]
     evidence_text = "\n".join(f"- {item}" for item in evidence[:8]) or "- no evidence"
     return {
@@ -166,6 +172,7 @@ def build_case_cache_card(
     *,
     candidate_index: int,
 ) -> dict[str, Any]:
+    # 方法说明：构建并返回调用方需要的对象。
     metadata = case.get("metadata") if isinstance(case.get("metadata"), dict) else {}
     plan = case.get("final_plan") or metadata.get("recommended_plan") or metadata.get("final_text") or {}
     plan_summary = _format_plan(plan)
@@ -233,6 +240,7 @@ def build_feedback_card(
     plan: dict[str, Any],
     evidence: list[str],
 ) -> dict[str, Any]:
+    # 方法说明：构建并返回调用方需要的对象。
     plan_summary = _format_plan(plan)
     evidence_text = "\n".join(f"- {item}" for item in evidence[:5]) or "- no evidence"
     return {
@@ -279,6 +287,7 @@ def build_feedback_card(
 
 
 def _format_plan(plan: Any) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if isinstance(plan, dict):
         text = str(plan.get("summary") or plan)
     else:

@@ -1,0 +1,31 @@
+[
+  {
+    "name": "代码注释与可读性",
+    "keywords": [
+      "注释",
+      "可读性",
+      "方法注释",
+      "LangGraph",
+      "RAG",
+      "Prometheus",
+      "Milvus",
+      "Feishu",
+      "Langfuse"
+    ],
+    "docPath": "docs/modules/代码注释与可读性.md",
+    "relatedPaths": [
+      "src/agent_sentinel/main.py",
+      "src/agent_sentinel/config.py",
+      "src/agent_sentinel/monitoring.py",
+      "src/agent_sentinel/graph/workflow.py",
+      "src/agent_sentinel/llm/executor.py",
+      "src/agent_sentinel/agents",
+      "src/agent_sentinel/rag",
+      "src/agent_sentinel/tools",
+      "src/agent_sentinel/interactive_topic",
+      "src/agent_sentinel/feishu_app.py",
+      "src/agent_sentinel/feishu_longconn.py",
+      "src/agent_sentinel_mcp_server/__main__.py"
+    ]
+  }
+]

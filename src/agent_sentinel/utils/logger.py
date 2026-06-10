@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 def configure_logger(log_level: str = "INFO") -> None:
+    # 方法说明：初始化对象，并保存后续调用需要的状态。
     level = getattr(logging, log_level.upper(), logging.INFO)
     logging.basicConfig(
         level=level,
@@ -15,6 +16,7 @@ def configure_logger(log_level: str = "INFO") -> None:
 
 
 def _configure_plain_json_logger(level: int) -> None:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     logger = logging.getLogger("agent_sentinel.node_event_json")
     logger.setLevel(level)
     logger.propagate = False

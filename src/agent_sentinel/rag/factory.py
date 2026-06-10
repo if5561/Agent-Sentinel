@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_retriever(settings: Settings) -> BaseRetriever:
+    # 方法说明：构建并返回调用方需要的对象。
     provider = settings.rag_provider.strip().lower()
     if provider != "milvus":
         logger.info("Using mock RAG provider provider=%s", provider)

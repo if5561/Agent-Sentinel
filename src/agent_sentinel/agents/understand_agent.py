@@ -31,8 +31,10 @@ async def understand_node(
     cache_threshold: float = 0.85,
     cache_enabled: bool = True,
 ) -> DiagnosisState:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     logger.info("Node understand started")
     prompt_variables = {"raw_alert": state.get("raw_alert", {})}
+    # understand 节点先把原始告警压缩成摘要，后续检索和方案生成都围绕这个摘要展开。
     prompt = format_prompt("understand", prompt_variables)
     async with asyncio.timeout(llm_timeout_seconds(llm)):
         summary = await _call_llm(
@@ -58,11 +60,13 @@ async def understand_node(
     }
 
     if not cache_enabled or not case_store:
+        # 历史案例缓存是可选优化；缺少 Milvus 或未启用时不能阻塞主诊断链路。
         monitor.record_cache_miss(state.get("chat_id"))
         return base_update
 
     alert_text = build_alert_text(state.get("raw_alert", {}))
     try:
+        # 先按相似度阈值召回历史成功案例，命中后可以减少重复诊断成本。
         candidates = await case_store.search_similar_cases(
             alert_text,
             top_k=cache_top_k,
@@ -91,6 +95,7 @@ async def understand_node(
 
     candidate_dicts = [case_to_dict(candidate) for candidate in candidates]
     if not state.get("chat_id") or not sender or not decision_store:
+        # 没有交互通道时不自动采用历史案例，避免误把相似告警当成完全相同故障。
         logger.info("History cases found but Feishu cache decision unavailable; continuing workflow")
         monitor.record_cache_miss(state.get("chat_id"))
         return {
@@ -104,6 +109,7 @@ async def understand_node(
         }
 
     for index, candidate in enumerate(candidates[:cache_top_k]):
+        # 历史案例复用需要人工确认；用户拒绝当前候选后继续看下一个候选。
         decision = await _ask_case_cache_decision(
             state={**state, **base_update},
             sender=sender,
@@ -161,8 +167,10 @@ async def _ask_case_cache_decision(
     case: dict[str, Any],
     candidate_index: int,
 ) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     workflow_thread_id = state.get("workflow_thread_id", "")
     workflow_run_id = state.get("workflow_run_id", "")
+    # decision_id 与 workflow_thread_id 绑定，回调时才能恢复到对应的 interrupt 位置。
     decision_id = f"{workflow_thread_id}:case-cache:{candidate_index}" if workflow_thread_id else str(uuid.uuid4())
     context = await decision_store.get_decision_context(decision_id)
     if context and context.status in {"adopt", "reject"}:
@@ -194,17 +202,20 @@ async def _ask_case_cache_decision(
             "candidate_index": candidate_index,
         }
     )
+    # interrupt 返回值来自后续卡片回调；异常或未知动作统一当作拒绝处理，保证流程继续。
     decision = str((resume_payload or {}).get("decision") or "reject")
     return decision if decision in {"adopt", "reject"} else "reject"
 
 
 def _truncate_log_text(text: str, limit: int = 1000) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if len(text) <= limit:
         return text
     return f"{text[:limit]}..."
 
 
 async def _call_llm(llm: LLMExecutor, prompt: str, **kwargs: object) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     try:
         return await llm.call(prompt, **kwargs)
     except TypeError as exc:

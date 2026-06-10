@@ -22,6 +22,7 @@ class RetrievedDoc(BaseModel):
     embedding: list[float] = Field(default_factory=list, exclude=True)
 
     def to_prompt_text(self) -> str:
+        # 方法说明：构建并返回调用方需要的对象。
         label = "固定知识" if self.source_type == "static_doc" else "历史消息"
         title = self.title or self.id
         service = f" service={self.service}" if self.service else ""

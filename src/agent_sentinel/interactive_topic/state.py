@@ -29,6 +29,7 @@ def append_node_result(
     node_name: str,
     node_result: str,
 ) -> list[dict[str, str]]:
+    # 方法说明：更新已有资源或状态对象。
     return [
         *state.get("node_results", []),
         {"node_name": node_name, "result": node_result},
@@ -36,6 +37,7 @@ def append_node_result(
 
 
 def increment_retry(state: TopicFlowState, node_name: str) -> dict[str, int]:
+    # 方法说明：记录可观测事件或监控指标，便于后续追踪。
     retry_counts = dict(state.get("retry_counts", {}))
     retry_counts[node_name] = retry_counts.get(node_name, 0) + 1
     return retry_counts

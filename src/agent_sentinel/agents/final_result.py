@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 async def final_result_node(state: DiagnosisState, sender: FeishuSender) -> DiagnosisState:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     logger.info("Node final_result started")
     plan = state.get("recommended_plan", {})
     evidence = state.get("evidence", [])

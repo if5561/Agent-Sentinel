@@ -12,6 +12,7 @@ def build_chat_model(
     temperature: float = 0.0,
     trust_env: bool = False,
 ) -> ChatOpenAI:
+    # 方法说明：构建并返回调用方需要的对象。
     kwargs: dict[str, object] = {
         "api_key": api_key,
         "model": model,

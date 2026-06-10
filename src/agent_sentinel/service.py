@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class SingleTurnChatService:
     def __init__(self, settings: Settings) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self.settings = settings
         self.model = build_chat_model(settings)
         self.prompt = ChatPromptTemplate.from_messages(
@@ -31,6 +32,7 @@ class SingleTurnChatService:
         self.chain = self.prompt | self.model | StrOutputParser()
 
     def reply_once(self, user_input: str) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         payload = {"user_input": user_input}
         prompt_text = self.prompt.invoke(payload).to_string()
         return _invoke_chain_with_monitoring(
@@ -44,6 +46,7 @@ class SingleTurnChatService:
 
 class AlertAnalysisService:
     def __init__(self, settings: Settings) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self.settings = settings
         self.model = build_chat_model(settings)
         self.prompt = ChatPromptTemplate.from_messages(
@@ -84,6 +87,7 @@ class AlertAnalysisService:
         trigger_type: str = "unknown",
         tags: list[str] | None = None,
     ) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         payload = {
             "source": source,
             "level": level,
@@ -104,6 +108,7 @@ class AlertAnalysisService:
 
 
 def _invoke_chain_with_monitoring(chain: object, payload: dict[str, str], *, model: str, prompt_text: str, operation: str) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     started = time.perf_counter()
     try:
         result = chain.invoke(payload)  # type: ignore[attr-defined]

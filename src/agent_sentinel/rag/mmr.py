@@ -6,6 +6,7 @@ from agent_sentinel.rag.models import RetrievedDoc
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not left or not right or len(left) != len(right):
         return 0.0
     dot = sum(a * b for a, b in zip(left, right, strict=True))
@@ -23,6 +24,7 @@ def select_mmr(
     top_k: int,
     lambda_mult: float = 0.55,
 ) -> list[RetrievedDoc]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if top_k <= 0 or not docs:
         return []
     if not query_embedding or not any(doc.embedding for doc in docs):

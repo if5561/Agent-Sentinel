@@ -24,6 +24,7 @@ class StaticDocRetriever:
     pruning_config: dict | None = None
 
     async def retrieve(self, query: str, filters: RagFilters | None = None) -> list[RetrievedDoc]:
+        # 方法说明：从配置的后端或数据集中检索匹配内容。
         started = time.perf_counter()
         recall_top_k = self.recall_top_k or self.top_k
         logger.info(
@@ -59,6 +60,7 @@ class StaticDocRetriever:
         return docs
 
     def _prune(self, query: str, docs: list[RetrievedDoc]) -> list[RetrievedDoc]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not self.pruning_enabled or len(docs) <= self.top_k:
             logger.info(
                 "Static doc RAG pruning skipped recalled=%s top_k=%s pruning_enabled=%s",
@@ -79,12 +81,14 @@ class StaticDocRetriever:
 
 
 def _build_static_expr(filters: RagFilters | None) -> str | None:
+    # 方法说明：构建并返回调用方需要的对象。
     if not filters or not filters.service:
         return None
     return f'service == "{filters.service}" or service == "global"'
 
 
 def _doc_to_candidate(index: int, doc: RetrievedDoc, source_type: str) -> dict:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     return {
         "_index": index,
         "text": doc.text,
@@ -95,6 +99,7 @@ def _doc_to_candidate(index: int, doc: RetrievedDoc, source_type: str) -> dict:
 
 
 def _apply_pruning_scores(doc: RetrievedDoc, candidate: dict) -> RetrievedDoc:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     metadata = dict(doc.metadata)
     for key in ("metadata_score", "combined_score", "rerank_score"):
         if key in candidate:
@@ -104,6 +109,7 @@ def _apply_pruning_scores(doc: RetrievedDoc, candidate: dict) -> RetrievedDoc:
 
 
 def _format_doc_scores(docs: list[RetrievedDoc], limit: int = 5) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not docs:
         return "[]"
     values = []

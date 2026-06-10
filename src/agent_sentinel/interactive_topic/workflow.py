@@ -41,8 +41,10 @@ _tools_provider: Any | None = None
 
 
 def _get_tools_provider() -> Any:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     global _tools_provider
     if _tools_provider is None:
+        # 交互式 ReAct 工具按需初始化，避免没有进入工具节点时就连接外部系统。
         from agent_sentinel.config import get_settings
         from agent_sentinel.tools.factory import build_tools_provider
 
@@ -64,6 +66,7 @@ class InteractiveTopicWorkflow:
         llm: LLMExecutor | None = None,
         checkpointer: Any | None = None,
     ) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self.sender = sender
         self.wait_seconds = wait_seconds
         self.retriever = retriever
@@ -80,10 +83,12 @@ class InteractiveTopicWorkflow:
         self._loop_guard = threading.Lock()
 
     def compile(self) -> Any:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self._compiled is not None:
             return self._compiled
 
         builder = StateGraph(TopicFlowState)
+        # 每个节点都通过 _interactive_node 包装，统一处理卡片更新、确认、重试和指标。
         builder.add_node("understand", partial(self._interactive_node, "understand", self._understand))
         builder.add_node("cache_check", partial(self._interactive_node, "cache_check", self._cache_check))
         builder.add_node("rag_retrieve", partial(self._interactive_node, "rag_retrieve", self._rag_retrieve))
@@ -145,26 +150,33 @@ class InteractiveTopicWorkflow:
         return self._compiled
 
     async def start(self, chat_id: str, root_message_id: str, query: str) -> str:
+        # HTTP/长连接回调线程不直接跑工作流，而是提交到内部事件循环串行管理。
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         future = self._submit(self._start_impl(chat_id, root_message_id, query))
         return await asyncio.wrap_future(future)
 
     def start_sync(self, chat_id: str, root_message_id: str, query: str) -> tuple[str, bool]:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         future = self._submit(self._start_impl(chat_id, root_message_id, query))
         task_id = future.result()
         return f"Interactive topic workflow started: {task_id}", True
 
     async def handle_card_callback(self, payload: dict[str, Any], *, source: str = "card") -> dict[str, str]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         future = self._submit(self._handle_card_callback_impl(payload, source=source))
         return await asyncio.wrap_future(future)
 
     def handle_card_callback_sync(self, payload: dict[str, Any], *, source: str = "card") -> dict[str, str]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         future = self._submit(self._handle_card_callback_impl(payload, source=source))
         return future.result()
 
     async def _start_impl(self, chat_id: str, root_message_id: str, query: str) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         started = time.perf_counter()
         existing_task = self.task_store.get_task_by_source(chat_id, root_message_id)
         if existing_task is not None:
+            # 同一条飞书消息可能被重复投递，按 chat_id + root_message_id 去重，避免创建多张卡片。
             logger.info(
                 "Interactive topic duplicate start ignored trace_id=%s existing_task_id=%s chat_id=%s root_message_id=%s query_chars=%s",
                 trace_id_from_parts(chat_id, root_message_id),
@@ -186,6 +198,7 @@ class InteractiveTopicWorkflow:
         )
         task = self.task_store.create_task(task_id, chat_id, root_message_id, query)
         if task.task_id != task_id:
+            # create_task 内部也会处理并发去重，这里兜底返回已经存在的任务。
             logger.info(
                 "Interactive topic task already exists after create task_id=%s requested_task_id=%s chat_id=%s root_message_id=%s",
                 task.task_id,
@@ -219,6 +232,7 @@ class InteractiveTopicWorkflow:
         return task_id
 
     async def _handle_card_callback_impl(self, payload: dict[str, Any], *, source: str = "card") -> dict[str, str]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         value = self._extract_card_value(payload)
         task_id = str(value.get("task_id") or "")
         node_name = str(value.get("node_name") or value.get("node") or "")
@@ -235,6 +249,7 @@ class InteractiveTopicWorkflow:
             logger.info("Interactive topic callback ignored noop task_id=%s source=%s", task_id, source)
             return {"status": "ignored"}
         if action in {"feedback_valid", "feedback_invalid"}:
+            # 最终反馈不恢复 LangGraph 节点，只记录用户对结果有效性的评价。
             return await self._handle_feedback_callback(task_id, action, source=source)
         if not task_id or not node_name or action not in {"next", "retry"}:
             logger.info("Interactive topic callback ignored invalid value task_id=%s node=%s action=%s source=%s", task_id, node_name, action, source)
@@ -242,6 +257,7 @@ class InteractiveTopicWorkflow:
 
         task = self.task_store.confirm_action(task_id, node_name, action, source=source)
         if task is None:
+            # 过期或重复按钮点击会被忽略，避免旧卡片状态覆盖新节点执行。
             logger.info("Interactive topic callback ignored stale task_id=%s node=%s action=%s source=%s", task_id, node_name, action, source)
             return {"status": "ignored"}
 
@@ -277,6 +293,7 @@ class InteractiveTopicWorkflow:
         runner: NodeRunner,
         state: TopicFlowState,
     ) -> TopicFlowState:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         task_id = state["task_id"]
         task = self.task_store.get_task(task_id)
         card_message_id = task.card_message_id if task else None
@@ -284,6 +301,7 @@ class InteractiveTopicWorkflow:
         started = time.perf_counter()
         replay_result = self._confirmed_replay_result(task, node_name)
         if replay_result is not None:
+            # 用户确认会触发 LangGraph resume；节点重入时复用已展示结果，不重复调用 LLM/工具。
             action = str(task.last_action or "next") if task else "next"
             if action not in {"next", "retry"}:
                 action = "next"
@@ -307,6 +325,7 @@ class InteractiveTopicWorkflow:
                 retry_counts.get(node_name, 0),
             )
             if action == "retry" and retry_counts.get(node_name, 0) >= MAX_NODE_RETRIES:
+                # 连续拒绝达到上限后自动跳过当前节点，防止人工交互导致流程卡死。
                 action = "skip"
                 replay_result = f"{replay_result}\n\n已重试 {MAX_NODE_RETRIES} 次，自动跳过当前节点并进入下一节点。"
                 await self.sender.update_workflow_card(
@@ -369,6 +388,7 @@ class InteractiveTopicWorkflow:
 
         try:
             with monitor.track_node(node_name, state.get("chat_id")):
+                # runner 返回展示文本和可选诊断状态，统一由 _normalize_node_result 归一化。
                 run_result = await runner(state)
                 node_result, diagnosis_state = self._normalize_node_result(run_result, state)
         except Exception as exc:
@@ -518,6 +538,7 @@ class InteractiveTopicWorkflow:
         return update
 
     async def _drive(self, task_id: str, graph_input: TopicFlowState | Command) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         app = self.compile()
         trace_id = self._trace_id_for_input(task_id, graph_input)
         metadata = self._langfuse_metadata(task_id, graph_input)
@@ -580,6 +601,7 @@ class InteractiveTopicWorkflow:
                 self.llm.reset_trace_context(token)
 
     def _on_timeout(self, task_id: str, node_name: str) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             logger.info("Interactive topic timeout fired task_id=%s node=%s", task_id, node_name)
             self.handle_card_callback_sync(
@@ -590,6 +612,7 @@ class InteractiveTopicWorkflow:
             logger.exception("Interactive topic timeout handling failed task_id=%s node=%s", task_id, node_name)
 
     async def _get_task_lock(self, task_id: str) -> asyncio.Lock:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         async with self._task_locks_guard:
             lock = self._task_locks.get(task_id)
             if lock is None:
@@ -598,6 +621,7 @@ class InteractiveTopicWorkflow:
             return lock
 
     def _route_after_confirm(self, state: TopicFlowState) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if state.get("last_action") != "retry":
             return "next"
         current_node = str(state.get("current_node") or "")
@@ -605,6 +629,7 @@ class InteractiveTopicWorkflow:
         return "retry" if retry_count < MAX_NODE_RETRIES else "next"
 
     def _initial_diagnosis_state(self, *, chat_id: str, root_message_id: str, query: str, task_id: str) -> DiagnosisState:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         trace_id = trace_id_from_parts(chat_id, root_message_id)
         return {
             "raw_alert": {
@@ -626,6 +651,7 @@ class InteractiveTopicWorkflow:
         }
 
     def _diagnosis_state(self, state: TopicFlowState) -> DiagnosisState:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         diagnosis_state = state.get("diagnosis_state")
         if diagnosis_state:
             return diagnosis_state
@@ -637,14 +663,17 @@ class InteractiveTopicWorkflow:
         )
 
     def _merge_diagnosis_state(self, state: TopicFlowState, update: DiagnosisState) -> DiagnosisState:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         return {**self._diagnosis_state(state), **update}
 
     def _normalize_node_result(self, result: NodeRunResult, state: TopicFlowState) -> tuple[str, DiagnosisState]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if isinstance(result, tuple):
             return result
         return result, self._diagnosis_state(state)
 
     async def _understand(self, state: TopicFlowState) -> NodeRunResult:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self.llm is None:
             diagnosis_state = self._merge_diagnosis_state(state, {"alert_summary": state.get("query", "")})
             return f"告警理解完成：{state.get('query', '')}", diagnosis_state
@@ -659,6 +688,7 @@ class InteractiveTopicWorkflow:
         return f"告警理解完成：\n{summary}", diagnosis_state
 
     async def _cache_check(self, state: TopicFlowState) -> NodeRunResult:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         query = str(self._diagnosis_state(state).get("alert_summary") or state.get("query", ""))
         if self.case_store is None:
             logger.info("Interactive cache check skipped task_id=%s reason=no_case_store", state.get("task_id"))
@@ -700,6 +730,7 @@ class InteractiveTopicWorkflow:
         return "\n".join(lines), diagnosis_state
 
     async def _rag_retrieve(self, state: TopicFlowState) -> NodeRunResult:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         query = str(self._diagnosis_state(state).get("alert_summary") or state.get("query", ""))
         started = time.perf_counter()
         logger.info("Interactive RAG retrieve start task_id=%s query_chars=%s", state.get("task_id"), len(query))
@@ -757,6 +788,7 @@ class InteractiveTopicWorkflow:
         return "\n".join(lines), diagnosis_state
 
     async def _handle_feedback_callback(self, task_id: str, action: str, *, source: str) -> dict[str, str]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not task_id:
             logger.info("Interactive feedback ignored missing task_id action=%s source=%s", action, source)
             return {"status": "ignored"}
@@ -827,6 +859,7 @@ class InteractiveTopicWorkflow:
         return {"status": "ok", "saved_case_id": saved_case_id}
 
     async def _tool_call(self, state: TopicFlowState) -> NodeRunResult:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         update = await fetch_live_data_node(self._diagnosis_state(state))
         diagnosis_state = self._merge_diagnosis_state(state, update)
         live_data = diagnosis_state.get("live_data", {})
@@ -834,6 +867,7 @@ class InteractiveTopicWorkflow:
 
 
     async def _tool_router(self, state: TopicFlowState) -> NodeRunResult:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         diagnosis_state = self._diagnosis_state(state)
         default_plan = _default_tool_plan(state, diagnosis_state)
         if self.llm is None:
@@ -878,6 +912,7 @@ class InteractiveTopicWorkflow:
         return _format_tool_plan(tool_plan), diagnosis_state
 
     async def _tool_executor(self, state: TopicFlowState) -> NodeRunResult:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         diagnosis_state = self._diagnosis_state(state)
         tool_plan = _sanitize_tool_plan(state.get("tool_plan") or diagnosis_state.get("tool_plan") or {})
         if not tool_plan.get("need_tools"):
@@ -946,6 +981,7 @@ class InteractiveTopicWorkflow:
         return _format_tool_results(tool_results), diagnosis_state
 
     async def _evidence_review(self, state: TopicFlowState) -> NodeRunResult:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         diagnosis_state = self._diagnosis_state(state)
         tool_results = [
             item for item in (state.get("tool_results") or diagnosis_state.get("tool_results") or [])
@@ -1003,6 +1039,7 @@ class InteractiveTopicWorkflow:
         return _format_evidence_review(review), diagnosis_state
 
     async def _generate_plan(self, state: TopicFlowState) -> NodeRunResult:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self.llm is None:
             diagnosis_state = self._merge_diagnosis_state(
                 state,
@@ -1030,6 +1067,7 @@ class InteractiveTopicWorkflow:
         return _format_plan_result(diagnosis_state.get("recommended_plan", {}), diagnosis_state.get("evidence", [])), diagnosis_state
 
     async def _validate(self, state: TopicFlowState) -> NodeRunResult:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self.llm is None:
             diagnosis_state = self._merge_diagnosis_state(state, {"validation_result": False})
             return "方案校验跳过：LLM 未配置。", diagnosis_state
@@ -1044,6 +1082,7 @@ class InteractiveTopicWorkflow:
         ), diagnosis_state
 
     async def _summary(self, state: TopicFlowState) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self.llm is not None:
             prompt = _build_summary_prompt(state)
             try:
@@ -1077,6 +1116,7 @@ class InteractiveTopicWorkflow:
         return "总结完成：建议先限流止血，扩容消费者，检查数据库慢查询，并持续观察错误率回落。"
 
     def _build_final_text(self, state: dict[str, Any]) -> str:
+        # 方法说明：构建并返回调用方需要的对象。
         results = state.get("node_results", [])
         last_result = ""
         for item in results:
@@ -1096,6 +1136,7 @@ class InteractiveTopicWorkflow:
         return "\n".join(lines)
 
     def _trace_id_for_input(self, task_id: str, graph_input: TopicFlowState | Command) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if isinstance(graph_input, dict):
             return str(
                 graph_input.get("trace_id")
@@ -1107,6 +1148,7 @@ class InteractiveTopicWorkflow:
         return task_id
 
     def _langfuse_metadata(self, task_id: str, graph_input: TopicFlowState | Command) -> dict[str, object]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if isinstance(graph_input, dict):
             chat_id = graph_input.get("chat_id")
             root_message_id = graph_input.get("root_message_id")
@@ -1141,6 +1183,7 @@ class InteractiveTopicWorkflow:
         error: BaseException | None = None,
         **extra: object,
     ) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         trace_id = str(
             state.get("trace_id")
             or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id"))
@@ -1182,6 +1225,7 @@ class InteractiveTopicWorkflow:
         status: str,
         **extra: object,
     ) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         trace_id = str(
             state.get("trace_id")
             or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id"))
@@ -1205,6 +1249,7 @@ class InteractiveTopicWorkflow:
         node_event_json_logger.info(payload_json)
 
     def _build_feedback_state(self, task: Any, values: dict[str, Any], final_text: str) -> dict[str, Any]:
+        # 方法说明：构建并返回调用方需要的对象。
         node_results = values.get("node_results", [])
         result_by_node = {
             str(item.get("node_name")): str(item.get("result") or "")
@@ -1231,6 +1276,7 @@ class InteractiveTopicWorkflow:
         }
 
     def _node_results(self, task_id: str) -> list[dict[str, str]]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         app = self.compile()
         try:
             snapshot = app.get_state({"configurable": {"thread_id": task_id}, "recursion_limit": 50})
@@ -1242,6 +1288,7 @@ class InteractiveTopicWorkflow:
             return []
 
     def _confirmed_replay_result(self, task: Any, node_name: str) -> str | None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if task is None:
             return None
         if task.current_node != node_name:
@@ -1258,6 +1305,7 @@ class InteractiveTopicWorkflow:
         current_status: str,
         node_results: list[dict[str, str]],
     ) -> dict[str, str]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         completed = {
             str(item.get("node_name"))
             for item in node_results
@@ -1271,6 +1319,7 @@ class InteractiveTopicWorkflow:
         return statuses
 
     def _extract_card_value(self, payload: dict[str, Any]) -> dict[str, Any]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         action = payload.get("action")
         if isinstance(action, dict):
             value = action.get("value")
@@ -1289,10 +1338,12 @@ class InteractiveTopicWorkflow:
         return payload
 
     def _submit(self, coro: Awaitable[Any]) -> concurrent.futures.Future[Any]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         loop = self._ensure_background_loop()
         return asyncio.run_coroutine_threadsafe(coro, loop)
 
     def _ensure_background_loop(self) -> asyncio.AbstractEventLoop:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         with self._loop_guard:
             if self._loop is not None and self._loop.is_running():
                 return self._loop
@@ -1309,6 +1360,7 @@ class InteractiveTopicWorkflow:
         return self._loop
 
     def _run_background_loop(self) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         self._loop = loop
@@ -1318,6 +1370,7 @@ class InteractiveTopicWorkflow:
 
 
 def _node_title(node_name: str) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     for step in WORKFLOW_STEPS:
         if step.node_name == node_name:
             return step.title
@@ -1325,16 +1378,19 @@ def _node_title(node_name: str) -> str:
 
 
 def _format_scores(scores: list[float], limit: int = 5) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not scores:
         return "[]"
     return "[" + ", ".join(f"{score:.4f}" for score in scores[:limit]) + (", ..." if len(scores) > limit else "") + "]"
 
 
 def _allowed_tool_names() -> list[str]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     return ["prometheus_query_metrics", "aliyun_sls_query_logs", "topology_query"]
 
 
 def _default_tool_plan(state: TopicFlowState, diagnosis_state: DiagnosisState) -> dict[str, object]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     trace_id = str(state.get("trace_id") or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id")) or "")
     alert_summary = str(diagnosis_state.get("alert_summary") or state.get("query") or "")
     return {
@@ -1359,6 +1415,7 @@ def _default_tool_plan(state: TopicFlowState, diagnosis_state: DiagnosisState) -
 
 
 def _build_tool_router_prompt(state: TopicFlowState, diagnosis_state: DiagnosisState, default_plan: dict[str, object]) -> str:
+    # 方法说明：构建并返回调用方需要的对象。
     context = {
         "query": state.get("query", ""),
         "business_trace_id": state.get("trace_id") or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id")),
@@ -1390,6 +1447,7 @@ def _build_evidence_review_prompt(
     tool_results: list[dict[str, object]],
     default_review: dict[str, object],
 ) -> str:
+    # 方法说明：构建并返回调用方需要的对象。
     context = {
         "query": state.get("query", ""),
         "business_trace_id": state.get("trace_id") or trace_id_from_parts(state.get("chat_id"), state.get("root_message_id")),
@@ -1408,6 +1466,7 @@ def _build_evidence_review_prompt(
 
 
 def _coerce_tool_plan(response: object, default_plan: dict[str, object]) -> dict[str, object]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     parsed = _extract_json_object(response)
     if not isinstance(parsed, dict):
         return default_plan
@@ -1415,6 +1474,7 @@ def _coerce_tool_plan(response: object, default_plan: dict[str, object]) -> dict
 
 
 def _coerce_evidence_review(response: object, default_review: dict[str, object]) -> dict[str, object]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     parsed = _extract_json_object(response)
     if not isinstance(parsed, dict):
         return default_review
@@ -1427,6 +1487,7 @@ def _coerce_evidence_review(response: object, default_review: dict[str, object])
 
 
 def _extract_json_object(value: object) -> dict[str, object] | None:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if isinstance(value, dict):
         return value
     text = str(value or "").strip()
@@ -1447,6 +1508,7 @@ def _extract_json_object(value: object) -> dict[str, object] | None:
 
 
 def _sanitize_tool_plan(plan: object) -> dict[str, object]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not isinstance(plan, dict):
         return {"need_tools": False, "reason": "Invalid tool plan.", "tool_calls": []}
     allowed = set(_allowed_tool_names())
@@ -1482,6 +1544,7 @@ async def _execute_tool_call(
     alert_summary: str,
     group_id: str | None,
 ) -> object:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if tool_name == "prometheus_query_metrics":
         metrics = getattr(provider, "metrics")
         if "promql" in arguments and hasattr(metrics, "_client") and hasattr(metrics, "_config"):
@@ -1506,6 +1569,7 @@ async def _execute_tool_call(
 
 
 def _extract_mcp_json(result: object) -> object:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not isinstance(result, dict):
         return result
     content = result.get("content")
@@ -1515,6 +1579,7 @@ def _extract_mcp_json(result: object) -> object:
 
 
 def _redact_tool_arguments(arguments: object) -> dict[str, object]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not isinstance(arguments, dict):
         return {}
     redacted: dict[str, object] = {}
@@ -1529,12 +1594,14 @@ def _redact_tool_arguments(arguments: object) -> dict[str, object]:
 
 
 def _tool_query(arguments: object) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not isinstance(arguments, dict):
         return ""
     return str(arguments.get("promql") or arguments.get("query") or arguments.get("alert_summary") or "")[:500]
 
 
 def _live_data_key(tool_name: str) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if tool_name == "prometheus_query_metrics":
         return "metrics"
     if tool_name == "aliyun_sls_query_logs":
@@ -1545,6 +1612,7 @@ def _live_data_key(tool_name: str) -> str:
 
 
 def _tool_result_count(payload: object) -> int:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if isinstance(payload, dict):
         for key in ("series", "matches", "dependencies"):
             value = payload.get(key)
@@ -1559,6 +1627,7 @@ def _tool_result_count(payload: object) -> int:
 
 
 def _tool_result_summary(payload: object) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if isinstance(payload, dict):
         summary = payload.get("summary")
         if summary:
@@ -1571,6 +1640,7 @@ def _tool_result_summary(payload: object) -> str:
 
 
 def _compact_tool_payload(payload: object) -> object:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if isinstance(payload, dict):
         compact: dict[str, object] = {}
         for key in ("provider", "tool", "query", "summary", "error", "total", "status"):
@@ -1595,11 +1665,13 @@ def _compact_tool_payload(payload: object) -> object:
 
 
 def _truncate_text(value: object, limit: int) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     text = str(value or "")
     return text if len(text) <= limit else text[:limit] + "...[truncated]"
 
 
 def _fallback_plan_update(state: DiagnosisState, error: BaseException) -> DiagnosisState:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     review = state.get("evidence_review") if isinstance(state.get("evidence_review"), dict) else {}
     missing = review.get("missing_evidence") if isinstance(review, dict) else []
     missing_items = [str(item) for item in missing] if isinstance(missing, list) else []
@@ -1624,6 +1696,7 @@ def _fallback_plan_update(state: DiagnosisState, error: BaseException) -> Diagno
 
 
 def _format_tool_plan(plan: dict[str, object]) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     calls = [item for item in plan.get("tool_calls", []) if isinstance(item, dict)]
     if not calls:
         return f"Tool router skipped: {plan.get('reason') or 'no tools needed'}"
@@ -1634,6 +1707,7 @@ def _format_tool_plan(plan: dict[str, object]) -> str:
 
 
 def _format_tool_results(results: list[dict[str, object]]) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not results:
         return "Tool executor completed: no tools were executed."
     lines = ["Tool executor completed:"]
@@ -1646,6 +1720,7 @@ def _format_tool_results(results: list[dict[str, object]]) -> str:
 
 
 def _format_evidence_review(review: dict[str, object]) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     status = "sufficient" if review.get("is_sufficient") else "insufficient"
     return (
         f"Evidence review completed: {status}.\n"
@@ -1655,6 +1730,7 @@ def _format_evidence_review(review: dict[str, object]) -> str:
 
 
 def _format_live_data(live_data: dict[str, Any]) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not live_data:
         return "未获得实时指标、日志或拓扑数据。"
     metrics = live_data.get("metrics") if isinstance(live_data.get("metrics"), dict) else {}
@@ -1681,6 +1757,7 @@ def _format_live_data(live_data: dict[str, Any]) -> str:
 
 
 def _format_plan_result(plan: object, evidence: list[str]) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not isinstance(plan, dict):
         return f"方案生成完成：{plan}"
     summary = str(plan.get("summary") or plan.get("title") or "已生成诊断方案。")
@@ -1699,6 +1776,7 @@ def _format_plan_result(plan: object, evidence: list[str]) -> str:
 
 
 def _build_summary_prompt(state: TopicFlowState) -> str:
+    # 方法说明：构建并返回调用方需要的对象。
     node_results: list[str] = []
     for item in state.get("node_results", []):
         if not isinstance(item, dict):

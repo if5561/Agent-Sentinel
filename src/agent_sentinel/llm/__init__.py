@@ -7,6 +7,7 @@ from agent_sentinel.config import Settings
 
 
 def build_chat_model(settings: Settings, model_name: str | None = None) -> ChatOpenAI:
+    # 方法说明：构建并返回调用方需要的对象。
     if not settings.openai_api_key:
         raise ValueError("OPENAI_API_KEY is missing. Please set it in your .env file.")
 

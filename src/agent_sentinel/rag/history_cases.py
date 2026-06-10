@@ -30,6 +30,7 @@ class HistoryCaseStore:
         top_k: int = 2,
         threshold: float | None = None,
     ) -> list[RetrievedDoc]:
+        # 方法说明：从配置的后端或数据集中检索匹配内容。
         if not alert_text.strip():
             logger.info("History case search skipped empty alert_text")
             return []
@@ -43,6 +44,7 @@ class HistoryCaseStore:
             min_score,
         )
         query_embedding = await self.embedding.embed(alert_text)
+        # 历史案例库只召回已确认有效的 alert_case，避免普通知识文档进入缓存复用判断。
         docs = await self.milvus.search(
             collection_name=self.collection_name,
             query_embedding=query_embedding,
@@ -50,6 +52,7 @@ class HistoryCaseStore:
             source_type="message_history",
             expr='doc_type == "alert_case"',
         )
+        # 阈值过滤在业务层完成，便于不同场景动态调整“可复用案例”的相似度门槛。
         filtered = [doc for doc in docs if doc.score >= min_score]
         logger.info(
             "History case search completed collection=%s recalled=%s filtered=%s threshold=%s scores=%s elapsed_ms=%s",
@@ -63,10 +66,12 @@ class HistoryCaseStore:
         return filtered
 
     async def save_case_to_history(self, state: DiagnosisState) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         started = time.perf_counter()
         alert_text = build_alert_text(state.get("raw_alert", {}))
         if not alert_text.strip():
             alert_text = str(state.get("alert_summary") or "AIOps alert case")
+        # Milvus VARCHAR 限制按字节计算，中文内容必须按 UTF-8 字节安全截断。
         alert_text = _truncate_utf8(alert_text, 65535)
         embedding = await self.embedding.embed(alert_text)
         now = int(time.time())
@@ -85,6 +90,7 @@ class HistoryCaseStore:
         }
         title = _truncate_utf8(str(raw_alert.get("summary") or state.get("alert_summary") or "AIOps alert case"), 512)
         tags = _extract_tags(state)
+        # case_id 使用告警文本和时间生成，避免同一秒内不同案例发生主键冲突。
         case_id = f"alert-case-{hashlib.sha256(f'{alert_text}:{now}'.encode('utf-8')).hexdigest()[:24]}"
         record = {
             "id": case_id,
@@ -116,7 +122,9 @@ class HistoryCaseStore:
 
 
 def build_history_case_store(settings: Settings) -> HistoryCaseStore | None:
+    # 方法说明：构建并返回调用方需要的对象。
     if settings.rag_provider.strip().lower() != "milvus" or not settings.milvus_uri:
+        # 只有启用 Milvus 且配置 URI 时才创建历史案例存储，mock 模式下直接跳过缓存复用。
         return None
     milvus = MilvusVectorClient(
         MilvusSearchConfig(
@@ -143,6 +151,8 @@ def build_history_case_store(settings: Settings) -> HistoryCaseStore | None:
 
 
 def build_alert_text(raw_alert: dict[str, Any]) -> str:
+    # 用摘要、详情、原文拼接成相似案例检索文本，尽量保留告警上下文而不是只用标题。
+    # 方法说明：构建并返回调用方需要的对象。
     parts = [
         str(raw_alert.get("summary") or ""),
         str(raw_alert.get("details") or ""),
@@ -154,7 +164,9 @@ def build_alert_text(raw_alert: dict[str, Any]) -> str:
 
 
 def final_plan_from_case(doc: RetrievedDoc) -> dict[str, Any]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     metadata = doc.metadata or {}
+    # 历史数据可能来自不同版本 schema，这里兼容多种字段名恢复可复用方案。
     plan = metadata.get("recommended_plan") or metadata.get("final_plan") or metadata.get("final_result")
     if isinstance(plan, dict):
         return plan
@@ -167,6 +179,7 @@ def final_plan_from_case(doc: RetrievedDoc) -> dict[str, Any]:
 
 
 def case_to_dict(doc: RetrievedDoc) -> dict[str, Any]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     return {
         "id": doc.id,
         "title": doc.title or "",
@@ -179,6 +192,7 @@ def case_to_dict(doc: RetrievedDoc) -> dict[str, Any]:
 
 
 def _extract_tags(state: DiagnosisState) -> list[str]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     raw_alert = state.get("raw_alert", {})
     tags = [str(tag).strip() for tag in raw_alert.get("tags", []) if str(tag).strip()]
     for item in state.get("evidence", []):
@@ -189,6 +203,7 @@ def _extract_tags(state: DiagnosisState) -> list[str]:
 
 
 def _truncate_utf8(value: str, max_bytes: int) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     data = value.encode("utf-8")
     if len(data) <= max_bytes:
         return value
@@ -196,10 +211,12 @@ def _truncate_utf8(value: str, max_bytes: int) -> str:
 
 
 def _metadata_json(metadata: dict[str, Any]) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     raw = json.dumps(metadata, ensure_ascii=False)
     if len(raw.encode("utf-8")) <= 8192:
         return raw
 
+    # 超过 Milvus 字段限制时保留关键决策信息，丢弃完整日志等大字段。
     compact = {
         "alert_summary": _truncate_utf8(str(metadata.get("alert_summary") or ""), 700),
         "retrieved_docs": [
@@ -228,6 +245,7 @@ def _metadata_json(metadata: dict[str, Any]) -> str:
 
 
 def _format_scores(scores: list[float], limit: int = 5) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not scores:
         return "[]"
     suffix = ", ..." if len(scores) > limit else ""

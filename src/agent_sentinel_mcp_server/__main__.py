@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), stream=sys.stderr)
     server = AgentSentinelMCPServer()
     await server.serve()
@@ -23,9 +24,11 @@ async def main() -> None:
 
 class AgentSentinelMCPServer:
     def __init__(self) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self._settings = get_settings()
 
     async def serve(self) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         while True:
             request = await _read_message()
             if request is None:
@@ -35,6 +38,7 @@ class AgentSentinelMCPServer:
                 await _write_message(response)
 
     async def _handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         request_id = request.get("id")
         method = request.get("method")
         params = request.get("params") if isinstance(request.get("params"), dict) else {}
@@ -59,6 +63,7 @@ class AgentSentinelMCPServer:
             return _error_response(request_id, -32000, str(exc))
 
     async def _call_tool(self, params: dict[str, Any]) -> dict[str, Any]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         name = str(params.get("name") or "")
         arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
         if name == "aliyun_sls_query_logs":
@@ -71,6 +76,7 @@ class AgentSentinelMCPServer:
 
 
 async def query_aliyun_sls(arguments: dict[str, Any]) -> dict[str, Any]:
+    # 方法说明：从配置的后端或数据集中检索匹配内容。
     settings = get_settings()
     if not (
         settings.aliyun_sls_access_key_id
@@ -100,6 +106,7 @@ async def query_aliyun_sls(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 async def query_prometheus(arguments: dict[str, Any]) -> dict[str, Any]:
+    # 方法说明：从配置的后端或数据集中检索匹配内容。
     base_url = (
         _str_or_none(arguments.get("prometheus_base_url"))
         or os.getenv("PROMETHEUS_BASE_URL")
@@ -124,6 +131,7 @@ async def query_prometheus(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_default_promql(alert_summary: str) -> str:
+    # 方法说明：构建并返回调用方需要的对象。
     lowered = alert_summary.lower()
     if any(token in lowered for token in ("5xx", "500", "error", "错误", "异常")):
         return 'sum(rate(http_requests_total{status=~"5.."}[5m]))'
@@ -137,6 +145,7 @@ def _build_default_promql(alert_summary: str) -> str:
 
 
 def _summarize_prometheus_result(result: Any) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not isinstance(result, list):
         return "Prometheus returned a non-list result."
     if not result:
@@ -145,6 +154,7 @@ def _summarize_prometheus_result(result: Any) -> str:
 
 
 def _tool_definitions() -> list[dict[str, Any]]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     return [
         {
             "name": "aliyun_sls_query_logs",
@@ -177,6 +187,7 @@ def _tool_definitions() -> list[dict[str, Any]]:
 
 
 async def _read_message() -> dict[str, Any] | None:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     headers: dict[str, str] = {}
     while True:
         line = await asyncio.to_thread(sys.stdin.buffer.readline)
@@ -195,6 +206,7 @@ async def _read_message() -> dict[str, Any] | None:
 
 
 async def _write_message(payload: dict[str, Any]) -> None:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
     sys.stdout.buffer.write(header + body)
@@ -202,10 +214,12 @@ async def _write_message(payload: dict[str, Any]) -> None:
 
 
 def _error_response(request_id: Any, code: int, message: str) -> dict[str, Any]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
 
 
 def _str_or_none(value: Any) -> str | None:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if value is None:
         return None
     text = str(value).strip()
@@ -213,6 +227,7 @@ def _str_or_none(value: Any) -> str | None:
 
 
 def _int_arg(arguments: dict[str, Any], key: str, default: int) -> int:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     value = arguments.get(key)
     if value is None or value == "":
         return default

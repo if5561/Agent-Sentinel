@@ -14,8 +14,10 @@ DANGEROUS_KEYWORDS = ("rm -rf", "drop table", "shutdown", "reboot", "kubectl del
 
 
 async def validate_plan_node(state: DiagnosisState, llm: LLMExecutor) -> DiagnosisState:
+    # 方法说明：校验输入或状态是否满足继续处理的条件。
     logger.info("Node validate started")
     plan_text = str(state.get("recommended_plan", {})).lower()
+    # 先用本地规则拦截明显高风险动作，再交给 LLM 做语义层面的方案校验。
     rule_ok = not any(keyword in plan_text for keyword in DANGEROUS_KEYWORDS)
     prompt_variables = {
         "recommended_plan": state.get("recommended_plan", {}),
@@ -31,6 +33,7 @@ async def validate_plan_node(state: DiagnosisState, llm: LLMExecutor) -> Diagnos
                 metadata={"node_name": "validate"},
             )
         ).strip().upper()
+    # 只有规则校验和 LLM 校验都通过，方案才进入后续人工确认/最终输出。
     validation_result = rule_ok and llm_result.startswith("PASS")
     attempts = state.get("validation_attempts", 0) + 1
     logger.info("Node validate completed result=%s attempts=%s", validation_result, attempts)
@@ -43,8 +46,10 @@ async def validate_plan_node(state: DiagnosisState, llm: LLMExecutor) -> Diagnos
 
 
 def validation_result(state: DiagnosisState) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if state.get("validation_result", False):
         return "pass"
     if state.get("validation_attempts", 0) <= 1:
+        # 第一次失败允许回到 generate_plan 重试；第二次仍失败则放行，避免流程无限循环。
         return "fail"
     return "pass"

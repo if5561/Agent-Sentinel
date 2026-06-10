@@ -41,7 +41,9 @@ class LLMExecutor:
         metadata: dict[str, object] | None = None,
         **kwargs: object,
     ) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self.mock_enabled or not self.api_key:
+            # mock 分支用于本地开发和测试，仍然记录耗时/token 指标以保持监控面板可用。
             logger.info("LLM mock call started prompt_chars=%s", len(prompt))
             started = time.perf_counter()
             response = self._mock_response(prompt, **kwargs)
@@ -64,6 +66,7 @@ class LLMExecutor:
         last_exc: Exception | None = None
         for model in self.models:
             try:
+                # 多模型按顺序尝试，前一个模型失败后自动降级到下一个模型。
                 return await self._call_with_retries(
                     model,
                     prompt,
@@ -89,6 +92,8 @@ class LLMExecutor:
         prompt_label: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> str:
+        # 单个模型内部用指数退避重试，模型列表层面再做跨模型 fallback。
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         async for attempt in AsyncRetrying(
             stop=stop_after_attempt(self.max_retries),
             wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
@@ -98,6 +103,7 @@ class LLMExecutor:
             with attempt:
                 started = time.perf_counter()
                 async with asyncio.timeout(self.timeout_seconds):
+                    # 每次尝试重新构建 ChatModel，避免失败连接或客户端状态污染后续重试。
                     model = build_chat_model(
                         api_key=self.api_key,
                         model=model_name,
@@ -117,6 +123,7 @@ class LLMExecutor:
                 elapsed_ms = int((time.perf_counter() - started) * 1000)
                 content = str(getattr(response, "content", response))
                 prompt_tokens, completion_tokens = _extract_token_usage(response)
+                # 优先使用模型响应里的真实 token usage；没有返回时退化为字符长度估算。
                 observed_prompt_tokens = prompt_tokens or _estimate_tokens(prompt)
                 observed_completion_tokens = completion_tokens or _estimate_tokens(content)
                 token_usage_source = "response_usage" if prompt_tokens or completion_tokens else "estimated"
@@ -143,19 +150,26 @@ class LLMExecutor:
         raise RuntimeError("LLM retry loop exited unexpectedly.")
 
     def set_trace_context(self, **values: object) -> object:
+        # trace context 由工作流设置，LLM 调用层只负责透传给观测实现。
+        # 方法说明：更新已有资源或状态对象。
         return set_trace_context(**values)
 
     def reset_trace_context(self, token: object) -> None:
+        # 方法说明：更新已有资源或状态对象。
         reset_trace_context(token)  # type: ignore[arg-type]
 
     def callbacks(self) -> list[object]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         return self.langfuse.callbacks()  # type: ignore[attr-defined]
 
     async def flush_observability(self) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         await self.langfuse.flush()  # type: ignore[attr-defined]
 
     def _mock_response(self, prompt: str, **_: object) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         lower = prompt.lower()
+        # 根据提示词特征返回结构化 mock，保证不同节点的解析逻辑在无真实模型时也能跑通。
         if "feishu interactive alert workflow" in lower or "不要输出 json" in lower:
             return (
                 "## 故障判断\n"
@@ -198,7 +212,9 @@ class LLMExecutor:
 
 def _extract_token_usage(response: object) -> tuple[int, int]:
     """Extract token usage from common LangChain/OpenAI response shapes."""
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     usage = getattr(response, "usage_metadata", None)
+    # LangChain 不同版本/不同 provider 的 token 字段位置不完全一致，这里做兼容提取。
     if isinstance(usage, dict):
         return int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0), int(
             usage.get("output_tokens") or usage.get("completion_tokens") or 0
@@ -214,4 +230,6 @@ def _extract_token_usage(response: object) -> tuple[int, int]:
 
 
 def _estimate_tokens(text: str) -> int:
+    # 估算值只用于监控趋势，不用于计费或精确配额控制。
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     return max(1, len(text) // 4) if text else 0

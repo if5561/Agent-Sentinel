@@ -8,38 +8,46 @@ from dotenv import load_dotenv
 
 
 def _to_bool(value: str | None, default: bool = False) -> bool:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _to_float(value: str | None, default: float) -> float:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if value is None or value == "":
         return default
     return float(value)
 
 
 def _to_int(value: str | None, default: int) -> int:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if value is None or value == "":
         return default
     return int(value)
 
 
 def _to_list(value: str | None) -> list[str]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if value is None or value.strip() == "":
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _to_args(value: str | None) -> list[str]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if value is None or value.strip() == "":
         return []
+    # MCP 启动参数既可能来自逗号分隔的环境变量，也可能是 shell 风格参数串。
     if "," in value:
         return _to_list(value)
     return shlex.split(value)
 
 
 def _first_non_empty(*values: str | None) -> str | None:
+    # 多个兼容环境变量按优先级取第一个非空值，便于兼容 Codex/OpenAI/自定义配置名。
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     for value in values:
         if value is not None and value != "":
             return value
@@ -178,7 +186,9 @@ class Settings:
 
 
 def get_settings() -> Settings:
+    # 方法说明：读取并返回当前流程需要的数据。
     load_dotenv()
+    # settings.yaml 提供默认结构化配置，环境变量用于部署时覆盖敏感项和环境差异。
     yaml_settings = _load_yaml_settings()
     app_cfg = yaml_settings.get("app", {})
     llm_cfg = yaml_settings.get("llm", {})
@@ -191,6 +201,7 @@ def get_settings() -> Settings:
         if isinstance(rag_cfg.get("message_history", {}), dict)
         else {}
     )
+    # 子配置统一转成 dict，避免 YAML 写错类型时在后续 .get 调用处抛异常。
     embedding_cfg = yaml_settings.get("embedding", {})
     tools_cfg = yaml_settings.get("tools", {}) if isinstance(yaml_settings.get("tools", {}), dict) else {}
     mcp_cfg = tools_cfg.get("mcp", {}) if isinstance(tools_cfg.get("mcp", {}), dict) else {}
@@ -205,6 +216,7 @@ def get_settings() -> Settings:
         log_level=os.getenv("LOG_LEVEL", str(app_cfg.get("log_level", "INFO"))),
         openai_api_key=os.getenv("OPENAI_API_KEY", ""),
         openai_base_url=_first_non_empty(
+            # 兼容不同运行环境中常见的 base_url 命名。
             os.getenv("CODEX_BASE_URL"),
             os.getenv("OPENAI_BASE_URL"),
             os.getenv("base_url"),
@@ -252,6 +264,7 @@ def get_settings() -> Settings:
         ),
         aiops_llm_models=_to_list(os.getenv("AIOPS_LLM_MODELS"))
         or [str(item) for item in llm_cfg.get("models", [])]
+        # 未显式配置多模型时，退回到单模型配置，保证诊断流程总有可用模型名。
         or [_first_non_empty(os.getenv("CODEX_MODEL"), os.getenv("OPENAI_MODEL")) or "gpt-4o-mini"],
         aiops_llm_timeout_seconds=_to_int(
             os.getenv("AIOPS_LLM_TIMEOUT_SECONDS"),
@@ -364,6 +377,7 @@ def get_settings() -> Settings:
         # 阿里云 SLS 配置
         mcp_enabled=_to_bool(os.getenv("MCP_ENABLED"), bool(mcp_cfg.get("enabled", False))),
         mcp_server_command=os.getenv("MCP_SERVER_COMMAND", str(mcp_cfg.get("server_command", ""))),
+        # MCP 参数需要支持两种来源：YAML 原生列表和环境变量字符串。
         mcp_server_args=_to_args(os.getenv("MCP_SERVER_ARGS"))
         or [str(item) for item in mcp_cfg.get("server_args", [])],
         mcp_timeout_seconds=_to_int(os.getenv("MCP_TIMEOUT_SECONDS"), int(mcp_cfg.get("timeout_seconds", 20))),
@@ -450,9 +464,11 @@ def get_settings() -> Settings:
 
 
 def _load_yaml_settings() -> dict[str, object]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     try:
         from agent_sentinel.utils.config_loader import load_yaml
 
         return load_yaml(os.getenv("AIOPS_SETTINGS_PATH", "config/settings.yaml"))
     except Exception:
+        # 配置文件缺失或格式错误时使用环境变量/默认值继续启动，便于容器和测试环境运行。
         return {}

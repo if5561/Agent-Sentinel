@@ -77,9 +77,11 @@ class StaticDocIngestor:
     batch_size: int = 16
 
     async def ensure_collection(self) -> None:
+        # 方法说明：校验输入或状态是否满足继续处理的条件。
         await self.milvus.ensure_static_doc_collection(self.collection_name, self.dimension)
 
     async def ingest_documents(self, docs: list[StaticDocument]) -> int:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not docs:
             return 0
         await self.ensure_collection()
@@ -87,6 +89,7 @@ class StaticDocIngestor:
         total = 0
         for start in range(0, len(docs), self.batch_size):
             batch = docs[start : start + self.batch_size]
+            # 同一批文档并发生成 embedding，再统一 upsert，减少单条写入的往返成本。
             records = await asyncio.gather(*(self._to_record(doc) for doc in batch))
             await self.milvus.upsert(self.collection_name, records)
             total += len(records)
@@ -94,8 +97,10 @@ class StaticDocIngestor:
         return total
 
     async def _to_record(self, doc: StaticDocument) -> dict[str, Any]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         embedding = await self.embedding.embed(doc.text)
         now = int(time.time())
+        # tags 既作为独立字段存储，也写入 metadata，便于检索结果展示和调试。
         metadata = {
             **doc.metadata,
             "tags": doc.tags,
@@ -119,6 +124,7 @@ class StaticDocIngestor:
 
 
 def load_static_documents(path: str | Path) -> list[StaticDocument]:
+    # 方法说明：读取并返回当前流程需要的数据。
     root = Path(path)
     if not root.exists():
         raise FileNotFoundError(f"Static docs path does not exist: {root}")
@@ -129,11 +135,13 @@ def load_static_documents(path: str | Path) -> list[StaticDocument]:
     for file_path in sorted(root.rglob("*")):
         if file_path.suffix.lower() not in {".md", ".markdown", ".jsonl"}:
             continue
+        # 支持目录批量导入，Markdown 走标题切片，JSONL 走逐行结构化导入。
         docs.extend(_load_file(file_path))
     return docs
 
 
 def _load_file(path: Path) -> list[StaticDocument]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     suffix = path.suffix.lower()
     if suffix in {".md", ".markdown"}:
         return _load_markdown_chunks(path)
@@ -148,10 +156,12 @@ def split_and_extract_metadata(file_path: str) -> list[Document]:
     The returned Documents can be embedded and upserted into vector stores such as
     Milvus; keep page_content as the chunk text and persist metadata alongside it.
     """
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
 
     path = Path(file_path)
     raw = path.read_text(encoding="utf-8")
     frontmatter, body = _split_frontmatter(raw)
+    # 按标题层级切片能保留 runbook 的章节语义，比固定长度切片更利于故障手册检索。
     splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
         strip_headers=False,
@@ -160,6 +170,7 @@ def split_and_extract_metadata(file_path: str) -> list[Document]:
 
     documents: list[Document] = []
     for index, chunk in enumerate(chunks, start=1):
+        # frontmatter 提供全局元数据，chunk.metadata 提供当前标题路径，两者合并成检索过滤字段。
         metadata = {
             **_to_dict(frontmatter.get("metadata")),
             **{key: value for key, value in frontmatter.items() if key != "metadata"},
@@ -174,6 +185,7 @@ def split_and_extract_metadata(file_path: str) -> list[Document]:
                 "doc_id": MANUAL_DOC_ID,
                 "chunk_index": index,
                 "section": _build_section(h1, h2, h3),
+                # 以下字段用于后续按故障类型、严重级别、错误码和关键词做过滤或展示。
                 "alert_category": _detect_alert_category(h1),
                 "severity_level": _detect_severity(page_content),
                 "error_code": _extract_error_codes(page_content),
@@ -188,6 +200,7 @@ def split_and_extract_metadata(file_path: str) -> list[Document]:
 
 
 def _load_markdown_chunks(path: Path) -> list[StaticDocument]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     docs = split_and_extract_metadata(str(path))
     if not docs:
         return []
@@ -200,6 +213,7 @@ def _load_markdown_chunks(path: Path) -> list[StaticDocument]:
     static_docs: list[StaticDocument] = []
     for index, doc in enumerate(docs, start=1):
         metadata = dict(doc.metadata)
+        # 第一个 chunk 复用文档 id，其余 chunk 追加序号，保证 Milvus 主键稳定且不冲突。
         chunk_id = base_id if index == 1 else f"{base_id}-{index:04d}"
         chunk_title = str(metadata.get("h3") or metadata.get("h2") or metadata.get("h1") or title)
         static_docs.append(
@@ -221,6 +235,7 @@ def _load_markdown_chunks(path: Path) -> list[StaticDocument]:
 
 
 def _load_markdown(path: Path) -> StaticDocument:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     raw = path.read_text(encoding="utf-8")
     frontmatter, body = _split_frontmatter(raw)
     title = str(frontmatter.get("title") or _extract_markdown_title(body) or path.stem)
@@ -245,11 +260,13 @@ def _load_markdown(path: Path) -> StaticDocument:
 
 
 def _load_jsonl(path: Path) -> list[StaticDocument]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     docs: list[StaticDocument] = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             continue
         payload = json.loads(line)
+        # JSONL 允许每行是一个独立文档，缺省 id/title 时用文件名和行号兜底。
         payload.setdefault("id", f"{path.stem}-{line_number}")
         payload.setdefault("title", payload["id"])
         payload.setdefault("metadata", {})
@@ -260,6 +277,7 @@ def _load_jsonl(path: Path) -> list[StaticDocument]:
 
 
 def _split_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not raw.startswith("---"):
         return {}, raw
     parts = raw.split("---", 2)
@@ -272,6 +290,7 @@ def _split_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
 
 
 def _extract_markdown_title(text: str) -> str | None:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("# "):
@@ -280,10 +299,12 @@ def _extract_markdown_title(text: str) -> str | None:
 
 
 def _build_section(h1: str, h2: str, h3: str) -> str:
+    # 方法说明：构建并返回调用方需要的对象。
     return "_".join(_normalize_section_part(part) for part in (h1, h2, h3) if part.strip())
 
 
 def _normalize_section_part(value: str) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     value = value.replace(r"\.", ".").strip()
     value = re.sub(r"^#+\s*", "", value)
     value = re.sub(r"\s+", "_", value)
@@ -291,6 +312,7 @@ def _normalize_section_part(value: str) -> str:
 
 
 def _detect_alert_category(h1: str) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     mapping = (
         ("消息队列", "MQ"),
         ("应用服务", "应用服务"),
@@ -309,6 +331,7 @@ def _detect_alert_category(h1: str) -> str:
 
 
 def _detect_severity(page_content: str) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if any(token in page_content for token in ("核心业务致命故障", "高危", "雪崩")):
         return "P0"
     if any(token in page_content for token in ("严重", "暴涨", "飙升")):
@@ -317,6 +340,7 @@ def _detect_severity(page_content: str) -> str:
 
 
 def _extract_error_codes(page_content: str) -> list[str]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     seen: set[str] = set()
     values: list[str] = []
     for match in ERROR_CODE_PATTERN.finditer(page_content):
@@ -329,11 +353,14 @@ def _extract_error_codes(page_content: str) -> list[str]:
 
 
 def _extract_keywords(page_content: str) -> list[str]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     candidates: list[str] = []
+    # 粗体词通常是手册中的关键概念，优先作为候选关键词。
     candidates.extend(_clean_keyword(item) for item in re.findall(r"\*\*([^*]{2,40})\*\*", page_content))
 
     for line in page_content.splitlines():
         if any(label in line for label in ("故障定义", "根因", "解决方案", "处理建议", "排查要点", "排查步骤")):
+            # 关键小节标题附近的信息通常比普通正文更能代表故障语义。
             candidates.extend(_keyword_tokens(line))
 
     candidates.extend(
@@ -355,16 +382,19 @@ def _extract_keywords(page_content: str) -> list[str]:
 
 
 def _keyword_tokens(text: str) -> list[str]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     tokens = re.findall(r"[\u4e00-\u9fffA-Za-z0-9][\u4e00-\u9fffA-Za-z0-9+/._-]{1,24}", text)
     return [token for token in tokens if len(token) >= 2]
 
 
 def _clean_keyword(value: str) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     value = re.sub(r"[*`#>\-：:，,。；;、（）()\[\]【】]", "", str(value)).strip()
     return value[:40]
 
 
 def _to_tags(value: Any) -> list[str]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if value is None:
         return []
     if isinstance(value, str):
@@ -375,10 +405,12 @@ def _to_tags(value: Any) -> list[str]:
 
 
 def _to_dict(value: Any) -> dict[str, Any]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     return value if isinstance(value, dict) else {}
 
 
 def _to_int(value: Any, default: int) -> int:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     try:
         return int(value)
     except (TypeError, ValueError):

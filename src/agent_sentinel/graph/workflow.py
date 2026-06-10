@@ -47,6 +47,7 @@ class DiagnosisWorkflow:
         case_store: HistoryCaseStore | None = None,
         checkpointer: Any | None = None,
     ) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self.settings = settings
         self.llm = llm
         self.sender = sender
@@ -57,8 +58,10 @@ class DiagnosisWorkflow:
         self._compiled: Any | None = None
 
     def compile(self) -> Any:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self._compiled is not None:
             return self._compiled
+        # workflow.yaml 负责声明节点和边，代码里的 registry 只提供可执行函数映射。
         workflow_config = load_yaml(self.settings.aiops_workflow_config_path)
         graph = StateGraph(DiagnosisState)
         registry = self._node_registry()
@@ -79,6 +82,7 @@ class DiagnosisWorkflow:
         for edge in workflow_config.get("conditional_edges", []):
             source = str(edge["from"])
             condition_name = str(edge["condition"])
+            # 配置文件用字符串 END 保持可读性，编译时转换成 LangGraph 的终止节点常量。
             mapping = {
                 str(key): END if value == "END" else str(value)
                 for key, value in dict(edge["mapping"]).items()
@@ -90,11 +94,13 @@ class DiagnosisWorkflow:
         return self._compiled
 
     async def run_streaming(self, initial_state: DiagnosisState) -> DiagnosisState:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         app = self.compile()
         workflow_thread_id = initial_state.get("workflow_thread_id", "")
         started = time.perf_counter()
         trace_id = trace_id_from_state(initial_state)
         metadata = self._langfuse_metadata(initial_state)
+        # thread_id 是 LangGraph checkpointer 的会话键；metadata 用于日志和观测平台串联同一次诊断。
         config = {
             "configurable": {
                 "thread_id": workflow_thread_id,
@@ -115,6 +121,7 @@ class DiagnosisWorkflow:
             sorted((initial_state.get("raw_alert") or {}).keys()),
         )
         final_state: DiagnosisState = dict(initial_state)
+        # LLM 调用通过 contextvars 读取 trace 上下文，确保节点内部多次调用也归属同一链路。
         token = self.llm.set_trace_context(**metadata)
         try:
             with monitor.track_workflow("diagnosis", initial_state.get("chat_id")):
@@ -132,11 +139,13 @@ class DiagnosisWorkflow:
                             sorted(node_update.keys()) if isinstance(node_update, dict) else type(node_update).__name__,
                         )
                         if isinstance(node_update, dict):
+                            # streaming 返回的是节点增量，合并后形成 API 层可直接返回的最终状态视图。
                             final_state.update(node_update)
                         await self._send_progress(node_name, final_state)
                 state_snapshot = await app.aget_state(config)
                 final_values = getattr(state_snapshot, "values", None)
                 if isinstance(final_values, dict):
+                    # 用 checkpointer 中的最终状态兜底，覆盖 streaming 中可能未显式返回的字段。
                     final_state.update(final_values)
         finally:
             self.llm.reset_trace_context(token)
@@ -150,8 +159,10 @@ class DiagnosisWorkflow:
         return final_state
 
     async def resume(self, workflow_thread_id: str, resume_payload: dict[str, Any]) -> DiagnosisState:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         app = self.compile()
         started = time.perf_counter()
+        # 恢复前先读取已挂起线程的状态，才能重建 trace、chat_id 和业务上下文。
         base_config = {
             "configurable": {"thread_id": workflow_thread_id},
             "recursion_limit": 20,
@@ -163,6 +174,7 @@ class DiagnosisWorkflow:
             final_state.update(values)
         trace_id = trace_id_from_state(final_state)
         metadata = self._langfuse_metadata(final_state)
+        # resume 沿用同一个 thread_id，让 LangGraph 从 interrupt 停住的位置继续执行。
         config = {
             "configurable": {
                 "thread_id": workflow_thread_id,
@@ -216,6 +228,7 @@ class DiagnosisWorkflow:
         return final_state
 
     async def update_state(self, workflow_thread_id: str, state_update: dict[str, Any]) -> None:
+        # 方法说明：更新已有资源或状态对象。
         app = self.compile()
         await app.aupdate_state(
             {"configurable": {"thread_id": workflow_thread_id}, "recursion_limit": 20},
@@ -223,6 +236,8 @@ class DiagnosisWorkflow:
         )
 
     def _node_registry(self) -> dict[str, NodeFn]:
+        # partial 在这里注入外部依赖，让各节点函数保持“输入 state，输出 state 增量”的简单形态。
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         registry = {
             "understand": partial(
                 understand_node,
@@ -254,10 +269,13 @@ class DiagnosisWorkflow:
                 enabled=self.settings.rag_feedback_enabled,
             ),
         }
+        # 所有节点统一包一层监控和日志，避免每个 agent 重复写相同的埋点逻辑。
         return {name: self._track_node(name, node) for name, node in registry.items()}
 
     def _track_node(self, node_name: str, node: NodeFn) -> NodeFn:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         async def wrapped(state: DiagnosisState) -> DiagnosisState:
+            # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
             trace_id = trace_id_from_state(state)
             logger.info("Diagnosis node execution start trace_id=%s node=%s", trace_id, node_name)
             with monitor.track_node(node_name, state.get("chat_id")):
@@ -268,6 +286,8 @@ class DiagnosisWorkflow:
         return wrapped
 
     def _route_registry(self) -> dict[str, Callable[[DiagnosisState], str]]:
+        # 路由函数返回值必须和 workflow.yaml 里的 conditional_edges.mapping key 保持一致。
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         return {
             "should_fetch": should_fetch,
             "validation_result": validation_result,
@@ -278,6 +298,8 @@ class DiagnosisWorkflow:
         }
 
     async def _send_progress(self, node_name: str, state: DiagnosisState) -> None:
+        # 进度消息是用户体验层增强；真正的流程状态仍以 LangGraph state 为准。
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         status = {
             "understand": "✅ 已完成告警理解（缓存查找），正在检索历史案例...",
             "retrieve": "✅ 历史案例检索完成，正在判断是否需要实时数据...",
@@ -304,7 +326,9 @@ class DiagnosisWorkflow:
         )
 
     def _langfuse_metadata(self, state: DiagnosisState) -> dict[str, object]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         trace_id = trace_id_from_state(state)
+        # 观测元数据同时携带业务 trace 和工作流线程 ID，便于从日志跳到模型调用链路。
         return {
             "trace_id": trace_id,
             "business_trace_id": trace_id,
@@ -320,6 +344,7 @@ class DiagnosisWorkflow:
 
 
 def build_llm_executor(settings: Settings) -> LLMExecutor:
+    # 方法说明：构建并返回调用方需要的对象。
     return LLMExecutor(
         models=settings.aiops_llm_models,
         api_key=settings.openai_api_key,

@@ -45,6 +45,7 @@ STATIC_CATEGORY_KEYWORDS = {
 
 
 def jaccard_similarity(str1: str, str2: str) -> float:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     left = set(_tokenize(str1))
     right = set(_tokenize(str2))
     union = left | right
@@ -54,6 +55,7 @@ def jaccard_similarity(str1: str, str2: str) -> float:
 
 
 def extract_query_features(query: str) -> dict[str, Any]:
+    # 方法说明：解析输入内容，转换为业务逻辑使用的结构。
     normalized = _normalize_text(query)
     tokens = set(_tokenize(query))
     alert_categories: set[str] = set()
@@ -73,6 +75,7 @@ def extract_query_features(query: str) -> dict[str, Any]:
 
 
 def compute_history_metadata_score(metadata: dict, query: str) -> float:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not isinstance(metadata, dict):
         return 0.0
 
@@ -99,6 +102,7 @@ def compute_history_metadata_score(metadata: dict, query: str) -> float:
 
 
 def compute_static_metadata_score(metadata: dict, query_features: dict) -> float:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not isinstance(metadata, dict):
         metadata = {}
 
@@ -155,6 +159,7 @@ class Reranker:
         api_format: str = "auto",
         timeout_seconds: int = 15,
     ) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self.model_name = model_name
         self.device = device
         self.api_endpoint = api_endpoint
@@ -167,6 +172,7 @@ class Reranker:
 
     def rerank(self, query: str, documents: List[str]) -> List[float]:
         """Return one relevance score for each document in the same order."""
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not documents:
             return []
         logger.info(
@@ -182,6 +188,7 @@ class Reranker:
         return self._rerank_local(query, documents)
 
     def _rerank_api(self, query: str, documents: list[str]) -> list[float]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -234,6 +241,7 @@ class Reranker:
         return scores
 
     def _build_api_payload(self, query: str, documents: list[str]) -> dict[str, Any]:
+        # 方法说明：构建并返回调用方需要的对象。
         mode = self._api_payload_mode()
         if mode == "dashscope_vl":
             return {
@@ -258,6 +266,7 @@ class Reranker:
         return {"model": self.model_name, "query": query, "documents": documents}
 
     def _parse_dashscope_response(self, payload: dict[str, Any], document_count: int) -> list[float]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         output = payload.get("output") if isinstance(payload.get("output"), dict) else {}
         results = output.get("results") if isinstance(output, dict) else None
         if results is None:
@@ -279,6 +288,7 @@ class Reranker:
         return scores
 
     def _api_payload_mode(self) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         api_format = str(self.api_format or "auto").strip().lower()
         if api_format in {"dashscope_vl", "dashscope-vl", "dashscope_multimodal", "dashscope-multimodal"}:
             return "dashscope_vl"
@@ -293,9 +303,11 @@ class Reranker:
         return "generic"
 
     def api_mode(self) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         return self._api_payload_mode() if self.api_endpoint else "local"
 
     def _rerank_local(self, query: str, documents: list[str]) -> list[float]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         started = time.perf_counter()
         self._ensure_local_model()
         tokenizer = self._tokenizer
@@ -329,6 +341,7 @@ class Reranker:
         return normalized
 
     def _ensure_local_model(self) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self._model is not None and self._tokenizer is not None and self._torch is not None:
             return
         try:
@@ -348,6 +361,7 @@ def prune_by_differential_strategy(
     top_k: int,
     config: Dict | None = None,
 ) -> List[Dict]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not candidates or len(candidates) <= top_k:
         logger.info("RAG pruning skipped source_type=%s candidates=%s top_k=%s", candidates[0].get("source_type") if candidates else None, len(candidates), top_k)
         return candidates
@@ -365,6 +379,7 @@ def prune_by_differential_strategy(
 
 
 def _prune_history(query: str, candidates: list[dict], top_k: int, config: dict[str, Any]) -> list[dict]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     started = time.perf_counter()
     alpha = float(config.get("alpha_history", 0.6))
     ranked: list[dict] = []
@@ -393,6 +408,7 @@ def _prune_history(query: str, candidates: list[dict], top_k: int, config: dict[
 
 
 def _prune_static(query: str, candidates: list[dict], top_k: int, config: dict[str, Any]) -> list[dict]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     started = time.perf_counter()
     documents = [str(candidate.get("text") or "") for candidate in candidates]
     reranker = Reranker(
@@ -426,6 +442,7 @@ def _prune_static(query: str, candidates: list[dict], top_k: int, config: dict[s
 
 
 def _prune_static_fallback(query: str, candidates: list[dict], top_k: int, config: dict[str, Any]) -> list[dict]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     started = time.perf_counter()
     alpha = float(config.get("alpha_static_fallback", 0.7))
     query_features = extract_query_features(query)
@@ -455,15 +472,18 @@ def _prune_static_fallback(query: str, candidates: list[dict], top_k: int, confi
 
 
 def _normalize_text(text: str) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     return re.sub(r"[^\w\s]", " ", str(text).lower()).strip()
 
 
 def _tokenize(text: str) -> list[str]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     normalized = _normalize_text(text)
     return re.findall(r"\w+", normalized)
 
 
 def _as_list(value: Any) -> list[Any]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if value is None:
         return []
     if isinstance(value, list):
@@ -474,6 +494,7 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _bounded_score(value: Any) -> float:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     try:
         score = float(value)
     except (TypeError, ValueError):
@@ -484,19 +505,23 @@ def _bounded_score(value: Any) -> float:
 
 
 def _score_from_result(item: dict[str, Any]) -> Any:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     return item.get("relevance_score", item.get("score", item.get("rerank_score", 0.0)))
 
 
 def _is_dashscope_endpoint(endpoint: str) -> bool:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     normalized = endpoint.lower()
     return "dashscope" in normalized or "/services/rerank/" in normalized
 
 
 def _is_dashscope_compatible_endpoint(endpoint: str) -> bool:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     return "/compatible-api/" in endpoint.lower() or "/compatible-mode/" in endpoint.lower()
 
 
 def _endpoint_host(endpoint: str) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     try:
         return urlparse(endpoint).netloc or endpoint
     except Exception:
@@ -504,6 +529,7 @@ def _endpoint_host(endpoint: str) -> str:
 
 
 def _format_scores(scores: list[float], limit: int = 5) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not scores:
         return "[]"
     suffix = ", ..." if len(scores) > limit else ""
@@ -511,6 +537,7 @@ def _format_scores(scores: list[float], limit: int = 5) -> str:
 
 
 def _format_candidate_scores(candidates: list[dict], score_key: str, limit: int = 5) -> str:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not candidates:
         return "[]"
     values = []
@@ -521,6 +548,7 @@ def _format_candidate_scores(candidates: list[dict], score_key: str, limit: int 
 
 
 def _normalize_scores(scores: list[float]) -> list[float]:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     if not scores:
         return []
     bounded = [_bounded_score(score) for score in scores]

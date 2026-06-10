@@ -11,10 +11,13 @@ logger = logging.getLogger(__name__)
 
 
 async def retrieve_node(state: DiagnosisState, retriever: BaseRetriever) -> DiagnosisState:
+    # 方法说明：从配置的后端或数据集中检索匹配内容。
     logger.info("Node retrieve started")
     monitor.record_rag_retrieval("hybrid", state.get("chat_id"))
+    # 从告警上下文里抽取业务过滤条件，避免只靠语义相似度召回无关文档。
     filters = _build_filters(state)
     docs = await retriever.retrieve(state.get("alert_summary", ""), filters)
+    # 节点状态里保存面向 prompt 的文本，而不是保留 retriever 内部模型对象。
     prompt_docs = [doc.to_prompt_text() for doc in docs]
     logger.info("Node retrieve completed docs=%s", len(prompt_docs))
     return {
@@ -25,15 +28,19 @@ async def retrieve_node(state: DiagnosisState, retriever: BaseRetriever) -> Diag
 
 
 def should_fetch(state: DiagnosisState) -> str:
+    # 方法说明：校验输入或状态是否满足继续处理的条件。
     text = f"{state.get('alert_summary', '')} {state.get('raw_alert', {})}".lower()
     keywords = ("error", "critical", "timeout", "latency", "失败", "超时", "异常", "错误")
+    # 简单规则用于决定是否补充实时数据，避免低风险或信息不足的请求无谓调用外部工具。
     decision = "fetch" if any(keyword in text for keyword in keywords) else "skip"
     logger.info("Route should_fetch decision=%s", decision)
     return decision
 
 
 def _build_filters(state: DiagnosisState) -> RagFilters:
+    # 方法说明：构建并返回调用方需要的对象。
     raw_alert = state.get("raw_alert", {})
+    # RAG filter 是软边界：尽量按服务、级别、群组和标签缩小召回范围。
     return RagFilters(
         service=_clean(raw_alert.get("service") or raw_alert.get("source")),
         level=_clean(raw_alert.get("level")),
@@ -43,5 +50,6 @@ def _build_filters(state: DiagnosisState) -> RagFilters:
 
 
 def _clean(value: object) -> str | None:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     text = str(value or "").strip()
     return text or None

@@ -27,6 +27,7 @@ class FeishuLongConnectionBot:
         analyze_callback: AnalyzeCallback,
         card_action_callback: Callable[[dict[str, object]], dict[str, str]] | None = None,
     ) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self.settings = settings
         self.analyze_callback = analyze_callback
         self.card_action_callback = card_action_callback
@@ -34,6 +35,7 @@ class FeishuLongConnectionBot:
         self._started = False
 
     def start(self) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         if self._started:
             logger.info("Feishu long connection listener already started.")
             return
@@ -50,6 +52,7 @@ class FeishuLongConnectionBot:
             )
             return
 
+        # 飞书长连接客户端是阻塞式运行，放到 daemon 线程中避免阻塞 FastAPI 主线程。
         self._thread = threading.Thread(
             target=self._run_forever,
             name="feishu-long-connection",
@@ -60,8 +63,10 @@ class FeishuLongConnectionBot:
         logger.info("Feishu long connection listener thread started.")
 
     def _run_forever(self) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         import lark_oapi as lark
 
+        # EventDispatcherHandler 同时注册消息事件和可选卡片回调事件，统一走长连接通道。
         builder = (
             lark.EventDispatcherHandler.builder(
                 self.settings.feishu_event_encrypt_key or "",
@@ -84,6 +89,7 @@ class FeishuLongConnectionBot:
         ws_client.start()
 
     def _handle_message_event(self, data: object) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         started = time.perf_counter()
         try:
             import lark_oapi as lark
@@ -92,6 +98,7 @@ class FeishuLongConnectionBot:
             event = payload.get("event") or {}
             sender = event.get("sender") or {}
             if sender.get("sender_type") != "user":
+                # 忽略机器人/系统消息，避免机器人回复再次触发自身诊断。
                 logger.info("Longconn message ignored sender_type=%s", sender.get("sender_type"))
                 return
 
@@ -108,6 +115,7 @@ class FeishuLongConnectionBot:
             chat_type = str(message.get("chat_type") or "")
             mentions = message.get("mentions") or []
             if self.settings.feishu_analyze_mention_only and chat_type != "p2p" and not mentions:
+                # 群聊默认只响应 @ 机器人；私聊不强制 mention，交互体验更自然。
                 logger.info(
                     "Longconn message ignored mention required chat_id=%s chat_type=%s message_id=%s",
                     chat_id,
@@ -122,6 +130,7 @@ class FeishuLongConnectionBot:
                 return
 
             root_message_id = str(message.get("root_id") or "") or str(message.get("message_id") or "") or None
+            # root_message_id 用于把后续卡片和文本更新都收敛到同一个消息话题。
             logger.info(
                 "Longconn message routed chat_id=%s message_id=%s root_message_id=%s chat_type=%s mentions=%s content_chars=%s elapsed_ms=%s",
                 chat_id,
@@ -149,6 +158,7 @@ class FeishuLongConnectionBot:
             logger.exception("Failed to process Feishu long connection message event")
 
     def _handle_card_action_event(self, data: object) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self.card_action_callback is None:
             return
         try:
@@ -163,6 +173,7 @@ class FeishuLongConnectionBot:
                 value.get("action") or value.get("decision"),
                 sorted(payload.keys()),
             )
+            # 卡片回调可能继续驱动异步工作流，单独开线程避免阻塞飞书 SDK 的事件分发线程。
             threading.Thread(
                 target=self._run_card_action_payload,
                 args=(payload,),
@@ -173,12 +184,14 @@ class FeishuLongConnectionBot:
             logger.exception("Failed to process Feishu long connection card action event")
 
     def _run_card_action_payload(self, payload: dict[str, object]) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             asyncio.run(self._dispatch_card_action(payload))
         except Exception:
             logger.exception("Failed to dispatch Feishu long connection card action event")
 
     async def _dispatch_card_action(self, payload: dict[str, object]) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if self.card_action_callback is None:
             return
         result = self.card_action_callback(payload)
@@ -186,12 +199,14 @@ class FeishuLongConnectionBot:
             await result
 
     def _extract_sender_open_id(self, sender: object) -> str | None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not isinstance(sender, dict):
             return None
         sender_id = str(sender.get("sender_id") or sender.get("id") or "").strip()
         return sender_id or None
 
     def _extract_sender_name(self, sender: object) -> str | None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not isinstance(sender, dict):
             return None
         name = str(sender.get("name") or "").strip()

@@ -25,6 +25,7 @@ class FeishuMessagePoller:
         feishu_bot_client: FeishuBotClient,
         analyze_callback: AnalyzeCallback,
     ) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         self.settings = settings
         self.feishu_bot_client = feishu_bot_client
         self.analyze_callback = analyze_callback
@@ -34,6 +35,7 @@ class FeishuMessagePoller:
         self._lock = threading.Lock()
 
     def start(self) -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         if self._started:
             return
         if not self.settings.feishu_message_polling_enabled:
@@ -55,6 +57,7 @@ class FeishuMessagePoller:
         self._started = True
 
     def _run_forever(self) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         interval = max(self.settings.feishu_message_polling_interval_seconds, 2)
         logger.info(
             "Starting Feishu message polling loop interval_seconds=%s chats=%s page_size=%s",
@@ -71,6 +74,7 @@ class FeishuMessagePoller:
             time.sleep(interval)
 
     def _poll_chat(self, chat_id: str) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         started = time.perf_counter()
         items = self.feishu_bot_client.list_chat_messages(
             chat_id,
@@ -86,6 +90,7 @@ class FeishuMessagePoller:
             self._handle_message(chat_id, message)
 
     def _handle_message(self, chat_id: str, message: dict[str, object]) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         message_id = str(message.get("message_id") or "")
         if not message_id:
             logger.info("Feishu polled message ignored missing message_id chat_id=%s", chat_id)
@@ -142,6 +147,7 @@ class FeishuMessagePoller:
         )
 
     def _extract_text(self, raw_content: object) -> str:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if isinstance(raw_content, dict):
             if "content" in raw_content:
                 return extract_text_from_message_content(str(raw_content.get("content") or ""))
@@ -149,6 +155,7 @@ class FeishuMessagePoller:
         return extract_text_from_message_content(str(raw_content))
 
     def _looks_like_bot_mention(self, content_text: str, mentions: object) -> bool:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         bot_name = self.settings.feishu_bot_name.strip()
         if isinstance(mentions, list):
             for mention in mentions:
@@ -167,6 +174,7 @@ class FeishuMessagePoller:
         )
 
     def _extract_sender_open_id(self, sender: object) -> str | None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not isinstance(sender, dict):
             return None
         sender_id = str(sender.get("id") or "").strip()
@@ -176,12 +184,14 @@ class FeishuMessagePoller:
         return None
 
     def _extract_sender_name(self, sender: object) -> str | None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not isinstance(sender, dict):
             return None
         name = str(sender.get("name") or "").strip()
         return name or None
 
     def _already_seen(self, message_id: str) -> bool:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         with self._lock:
             if message_id in self._seen_message_ids:
                 return True

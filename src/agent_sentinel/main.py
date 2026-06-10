@@ -40,12 +40,15 @@ from agent_sentinel.utils.logger import configure_logger
 
 
 def configure_logging(log_level: str) -> None:
+    # 方法说明：初始化对象，并保存后续调用需要的状态。
     configure_logger(log_level)
 
 
 def build_app(settings: Settings | None = None) -> FastAPI:
+    # 方法说明：构建并返回调用方需要的对象。
     settings = settings or get_settings()
     configure_logging(settings.log_level)
+    # Prometheus 指标开关在应用构建时统一生效，避免各业务节点重复读取环境变量。
     configure_monitoring(enabled=settings.metrics_enabled)
     logger = logging.getLogger(__name__)
     logger.info(
@@ -85,13 +88,17 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=settings.app_name)
 
     def get_chat_service() -> SingleTurnChatService:
+        # 方法说明：读取并返回当前流程需要的数据。
         nonlocal chat_service
+        # 单轮聊天服务只在首次请求时初始化，避免启动阶段就创建不一定会用到的模型客户端。
         if chat_service is None:
             chat_service = SingleTurnChatService(settings)
         return chat_service
 
     def get_aiops_workflow() -> DiagnosisWorkflow:
+        # 方法说明：读取并返回当前流程需要的数据。
         nonlocal aiops_workflow
+        # 诊断工作流依赖 LLM、RAG、飞书发送器等对象，采用懒加载可以降低健康检查和简单接口的启动成本。
         if aiops_workflow is None:
             logger.info("Initializing diagnosis workflow rag_provider=%s mock_llm=%s", settings.rag_provider, settings.aiops_mock_llm_enabled)
             aiops_workflow = DiagnosisWorkflow(
@@ -103,7 +110,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return aiops_workflow
 
     def get_interactive_topic_workflow() -> InteractiveTopicWorkflow:
+        # 方法说明：读取并返回当前流程需要的数据。
         nonlocal interactive_topic_workflow
+        # 交互式话题工作流有独立的状态存储和卡片更新逻辑，仅在启用并首次触发时创建。
         if interactive_topic_workflow is None:
             logger.info(
                 "Initializing interactive topic workflow wait_seconds=%s rag_provider=%s static_top_k=%s history_top_k=%s final_top_k=%s",
@@ -126,11 +135,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return interactive_topic_workflow
 
     def verify_alert_token(provided_token: str | None) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         expected_token = settings.alert_api_token
+        # 未配置 token 时保持开发环境易用；一旦配置，则所有告警入口都必须携带正确凭证。
         if expected_token and provided_token != expected_token:
             raise HTTPException(status_code=401, detail="Invalid alert token.")
 
     def verify_feishu_event_token(payload: FeishuEventEnvelope) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         expected_token = settings.feishu_event_verification_token
         if not expected_token:
             return
@@ -145,6 +157,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=401, detail="Invalid Feishu event token.")
 
     def report_exception(scene: str, exc: Exception) -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             alert_service.report_exception(scene, exc)
         except Exception as notify_exc:  # pragma: no cover
@@ -166,7 +179,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         workflow_thread_id: str | None = None,
         workflow_run_id: str | None = None,
     ) -> DiagnosisState:
+        # 方法说明：构建并返回调用方需要的对象。
         trace_id = trace_id_from_parts(chat_id, thread_root_message_id)
+        # 所有诊断入口最终都归一化成同一份 LangGraph state，后续节点只依赖这个状态契约。
         return {
             "raw_alert": {
                 "source": source,
@@ -183,6 +198,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "mention_name": mention_name,
             "workflow_thread_id": workflow_thread_id or str(uuid.uuid4()),
             "workflow_run_id": workflow_run_id or str(uuid.uuid4()),
+            # trace_id 用于日志和可观测性关联，不作为 Prometheus label，避免指标高基数。
             "trace_id": trace_id,
             "messages": [],
             "evidence": [],
@@ -209,11 +225,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         mention_open_id: str | None = None,
         mention_name: str | None = None,
     ) -> tuple[str, bool]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not settings.alert_analysis_enabled:
             logger.info("Diagnosis workflow skipped because alert analysis is disabled chat_id=%s source=%s", chat_id, source)
             return "Alert analysis is disabled.", False
 
         started = time.perf_counter()
+        # 这里先构造初始状态再进入工作流，便于统一记录 trace、线程 ID 和告警原文。
         initial_state = build_diagnosis_state(
             chat_id=chat_id,
             source=source,
@@ -243,6 +261,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
         final_state = await get_aiops_workflow().run_streaming(initial_state)
         final_text = str(final_state.get("final_text", ""))
+        # 是否真实发送飞书消息只取决于 chat_id 和机器人配置，工作流本身仍然可以在无 chat_id 场景运行。
         sent = bool(chat_id and feishu_bot_client.is_configured())
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         logger.info(
@@ -262,8 +281,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return final_text, sent
 
     async def resume_workflow_from_callback(payload: dict[str, Any], transport: str) -> dict[str, str]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         logger.info("Card callback received transport=%s payload_keys=%s", transport, sorted(payload.keys()))
         if settings.interactive_topic_enabled:
+            # 新版单卡片流程优先消费回调；如果不是它的 payload，再回退到旧版人审卡片解析。
             interactive_result = await get_interactive_topic_workflow().handle_card_callback(payload, source=transport)
             logger.info("Interactive topic callback result transport=%s status=%s", transport, interactive_result.get("status"))
             if interactive_result.get("status") != "ignored":
@@ -309,6 +330,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         mention_open_id: str | None = None,
         mention_name: str | None = None,
     ) -> tuple[str, bool]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         logger.info(
             "Analyze request routed chat_id=%s source=%s trigger_type=%s interactive_topic=%s root_message_id=%s query_chars=%s",
             chat_id,
@@ -319,6 +341,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             len(raw_text or details or summary or ""),
         )
         if settings.interactive_topic_enabled:
+            # 单卡片模式依赖原消息话题 ID 来持续更新同一张卡片，缺失时无法保证不刷屏。
             root_message_id = thread_root_message_id
             if not root_message_id:
                 logger.warning("Interactive topic skipped because root message id is missing chat_id=%s", chat_id)
@@ -346,8 +369,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.on_event("startup")
     def startup_event() -> None:
+        # 方法说明：初始化对象，并保存后续调用需要的状态。
         nonlocal longconn_bot, poller_bot
         logger.info("Application startup begin")
+        # 长连接和轮询都封装为可配置组件，组件内部会根据开关决定是否真正启动。
         if longconn_bot is None:
             longconn_bot = FeishuLongConnectionBot(
                 settings=settings,
@@ -367,8 +392,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.on_event("shutdown")
     async def shutdown_event() -> None:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         logger.info("Application shutdown begin")
         observability_clients: list[LLMExecutor] = []
+        # 关闭前主动 flush Langfuse 等可观测客户端，减少进程退出时丢失 trace 的概率。
         if aiops_workflow is not None:
             observability_clients.append(aiops_workflow.llm)
         if interactive_topic_workflow is not None and interactive_topic_workflow.llm is not None:
@@ -382,10 +409,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         return HealthResponse(status="ok", app=settings.app_name)
 
     @app.post("/chat/once", response_model=ChatResponse)
     def chat_once(payload: ChatRequest) -> ChatResponse:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             answer = get_chat_service().reply_once(payload.message)
             return ChatResponse(answer=answer, model=settings.openai_model)
@@ -397,6 +426,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/alerts/test")
     def test_alert() -> dict[str, str]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             dispatched, deduplicated = alert_service.report(
                 source="agent-sentinel",
@@ -418,6 +448,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         payload: AlertReportRequest,
         x_alert_token: str | None = Header(default=None),
     ) -> AlertReportResponse:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             verify_alert_token(x_alert_token)
             dispatched, deduplicated = alert_service.report(
@@ -446,6 +477,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         limit: int = Query(default=20, ge=1, le=100),
         x_alert_token: str | None = Header(default=None),
     ) -> list[AlertRecordResponse]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         verify_alert_token(x_alert_token)
         return [AlertRecordResponse(**item) for item in alert_service.recent_alerts(limit=limit)]
 
@@ -454,6 +486,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         payload: AlertAnalyzeRequest,
         x_alert_token: str | None = Header(default=None),
     ) -> AlertAnalyzeResponse:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             verify_alert_token(x_alert_token)
             thread_root_message_id = payload.thread_root_message_id or payload.message_id
@@ -488,6 +521,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         payload: AlertAnalyzeRequest,
         x_alert_token: str | None = Header(default=None),
     ) -> dict[str, Any]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             verify_alert_token(x_alert_token)
             initial_state = build_diagnosis_state(
@@ -543,6 +577,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/feishu/card/callback")
     async def feishu_card_callback(request: Request) -> dict[str, str]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             payload = await request.json()
             logger.info("HTTP Feishu card callback accepted payload_keys=%s", sorted(payload.keys()))
@@ -554,6 +589,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/webhook/card")
     async def webhook_card_callback(request: Request) -> dict[str, str]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             payload = await request.json()
             logger.info("HTTP webhook card callback accepted payload_keys=%s", sorted(payload.keys()))
@@ -565,6 +601,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/feishu/events")
     async def feishu_events(payload: FeishuEventEnvelope) -> dict[str, object]:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         try:
             logger.info(
                 "HTTP Feishu event received type=%s challenge=%s event_type=%s",
@@ -580,6 +617,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             verify_feishu_event_token(payload)
 
             if settings.feishu_event_encrypt_key and payload.event is None:
+                # 当前实现只处理明文事件；启用飞书加密后应在这里接入解密逻辑。
                 raise HTTPException(
                     status_code=400,
                     detail=(
@@ -590,6 +628,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
             header = payload.header
             if header is None or header.event_type != "im.message.receive_v1":
+                # 只处理消息接收事件，卡片回调由独立接口负责，避免不同事件结构混在一起解析。
                 logger.info("HTTP Feishu event ignored unsupported event_type=%s", header.event_type if header else None)
                 return {"status": "ignored"}
 
@@ -607,6 +646,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 return {"status": "ignored"}
 
             if settings.feishu_allowed_chat_ids and chat_id not in settings.feishu_allowed_chat_ids:
+                # 群白名单是业务边界控制，防止机器人响应非预期群聊中的 @ 消息。
                 logger.info("HTTP Feishu event ignored chat_id not allowed chat_id=%s", chat_id)
                 return {"status": "ignored"}
 
@@ -632,6 +672,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 or None
             )
             if settings.interactive_topic_enabled:
+                # 交互式流程优先复用原消息线程，在同一话题中维护诊断进度。
                 if not thread_root_message_id:
                     logger.info("HTTP Feishu event ignored missing root message id chat_id=%s", chat_id)
                     return {"status": "ignored", "reason": "missing root message id"}
@@ -670,6 +711,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/metrics")
     def metrics() -> Response:
+        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
         if not settings.metrics_enabled:
             raise HTTPException(status_code=404, detail="Metrics are disabled.")
         return Response(content=monitor.render_latest(), media_type=CONTENT_TYPE_LATEST)
@@ -678,6 +720,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
 
 def run_cli_once(settings: Settings, message: str) -> int:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     chat_service = SingleTurnChatService(settings)
     answer = chat_service.reply_once(message)
     print(answer)
@@ -685,6 +728,7 @@ def run_cli_once(settings: Settings, message: str) -> int:
 
 
 def run() -> int:
+    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
     parser = argparse.ArgumentParser(description="Agent Sentinel runner")
     parser.add_argument("--message", help="Run a single-turn chat in CLI mode.")
     args = parser.parse_args()

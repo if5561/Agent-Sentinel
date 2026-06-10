@@ -39,8 +39,10 @@ class DiagnosisState(TypedDict, total=False):
 
 
 def append_message(state: DiagnosisState, role: str, content: str) -> list[dict[str, str]]:
+    # 方法说明：更新已有资源或状态对象。
     return [*state.get("messages", []), {"role": role, "content": content}]
 
 
 def append_evidence(state: DiagnosisState, *items: str) -> list[str]:
+    # 方法说明：更新已有资源或状态对象。
     return [*state.get("evidence", []), *[item for item in items if item]]
