@@ -34,7 +34,7 @@ class FeishuWebhookNotifier:
         enabled: bool = True,
         timeout: int = 10,
     ) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：保存飞书 webhook 地址、签名密钥和超时时间，后续告警通知统一从这里发出。
         self.webhook_url = webhook_url
         self.secret = secret
         self.enabled = enabled
@@ -54,7 +54,7 @@ class FeishuWebhookNotifier:
         return base64.b64encode(hmac_code).decode("utf-8")
 
     def send_text(self, title: str, message: str) -> bool:
-        # 方法说明：将数据发送到外部通道，并隔离调用细节。
+        # 方法说明：把告警标题和正文发送到飞书 webhook，未配置或飞书返回错误时给出明确结果。
         if not self.is_configured():
             logger.info("Feishu alert skipped because webhook is not configured.")
             return False
@@ -95,7 +95,7 @@ class RealtimeAlertService:
         dedup_window_seconds: int = 60,
         store_limit: int = 100,
     ) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：准备实时告警服务，保存通知器、环境信息、去重窗口和最近告警缓存。
         self.notifier = notifier
         self.app_env = app_env
         self.title_prefix = title_prefix

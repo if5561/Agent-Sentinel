@@ -40,7 +40,7 @@ class InteractiveTopicSender:
     """Send and update a single Feishu card for an interactive workflow."""
 
     def __init__(self, client: FeishuBotClient | None, wait_seconds: int = 5) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：保存飞书客户端和等待确认时间，并为每张卡片准备独立更新锁。
         self.client = client
         self.wait_seconds = wait_seconds
         self._update_locks: dict[str, asyncio.Lock] = {}
@@ -53,7 +53,7 @@ class InteractiveTopicSender:
         task_id: str,
         query: str,
     ) -> str | None:
-        # 方法说明：将数据发送到外部通道，并隔离调用细节。
+        # 方法说明：创建第一张工作流卡片，把诊断任务展示在原始飞书话题下。
         if not self.client or not self.client.is_configured():
             logger.info("Interactive workflow card skipped chat_id=%s task_id=%s", chat_id, task_id)
             return None
@@ -105,7 +105,7 @@ class InteractiveTopicSender:
         buttons_node: str | None = None,
         feedback_buttons: bool = False,
     ) -> bool:
-        # 方法说明：更新已有资源或状态对象。
+        # 方法说明：刷新同一张工作流卡片，让用户看到当前节点状态、结果和可点击按钮。
         if not message_id or not self.client or not self.client.is_configured():
             logger.info(
                 "Interactive workflow card update skipped task_id=%s current_node=%s result=%s",
@@ -147,7 +147,7 @@ class InteractiveTopicSender:
 
     # Backward-compatible wrappers kept for older call sites/tests.
     async def send_topic_text(self, chat_id: str, root_message_id: str, text: str) -> str | None:
-        # 方法说明：将数据发送到外部通道，并隔离调用细节。
+        # 方法说明：兼容旧调用方式，在飞书原话题下发送一条文本回复。
         if not self.client or not self.client.is_configured():
             logger.info("Interactive topic text skipped chat_id=%s text=%s", chat_id, text)
             return None
@@ -165,7 +165,7 @@ class InteractiveTopicSender:
         node_name: str,
         node_result: str,
     ) -> str | None:
-        # 方法说明：将数据发送到外部通道，并隔离调用细节。
+        # 方法说明：兼容旧调用方式，把单节点结果也转成完整工作流卡片发送。
         return await self.send_workflow_card(chat_id, root_message_id, task_id, node_result)
 
     async def update_topic_card_status(
@@ -176,7 +176,7 @@ class InteractiveTopicSender:
         node_result: str,
         status_text: str,
     ) -> bool:
-        # 方法说明：更新已有资源或状态对象。
+        # 方法说明：兼容旧调用方式，把某个节点的状态更新映射到新的工作流卡片结构。
         return await self.update_workflow_card(
             message_id,
             task_id=task_id,
@@ -189,7 +189,7 @@ class InteractiveTopicSender:
         )
 
     async def _get_update_lock(self, message_id: str) -> asyncio.Lock:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：为同一张飞书卡片复用同一把异步锁，避免并发 PATCH 互相覆盖。
         async with self._update_locks_guard:
             lock = self._update_locks.get(message_id)
             if lock is None:
@@ -209,7 +209,7 @@ def build_workflow_card(
     buttons_node: str | None,
     feedback_buttons: bool = False,
 ) -> dict[str, object]:
-    # 方法说明：构建并返回调用方需要的对象。
+    # 方法说明：组装工作流进度卡片，把节点列表、当前结果和确认/反馈按钮放到同一张卡片里。
     steps = []
     for index, step in enumerate(WORKFLOW_STEPS, start=1):
         status = node_statuses.get(step.node_name, "pending")
@@ -315,7 +315,7 @@ def build_workflow_card(
 
 
 def _step_title(node_name: str | None) -> str:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：把内部节点名翻译成用户能看懂的中文阶段名称。
     for step in WORKFLOW_STEPS:
         if step.node_name == node_name:
             return step.title
@@ -323,7 +323,7 @@ def _step_title(node_name: str | None) -> str:
 
 
 def _header_template(node_statuses: dict[str, str]) -> str:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：根据节点状态选择飞书卡片头部颜色，让失败、运行中和完成状态一眼可见。
     if any(status == "failed" for status in node_statuses.values()):
         return "red"
     if all(node_statuses.get(step.node_name) == "done" for step in WORKFLOW_STEPS):
@@ -334,7 +334,7 @@ def _header_template(node_statuses: dict[str, str]) -> str:
 
 
 def _truncate(text: str, limit: int) -> str:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：限制卡片中的长文本长度，防止一次诊断结果把飞书卡片撑得过长。
     if len(text) <= limit:
         return text
     return f"{text[:limit]}..."

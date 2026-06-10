@@ -35,7 +35,7 @@ class AliyunARMSClient:
         app_id: str = "",
         timeout_seconds: int = 10,
     ) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：保存 ARMS 鉴权、地域、应用 ID 和超时配置，SDK 客户端等到首次查询时再创建。
         self._access_key_id = access_key_id
         self._access_key_secret = access_key_secret
         self._region_id = region_id
@@ -351,7 +351,7 @@ class ARMSMetricsProvider:
     """基于 ARMS 的监控指标提供者"""
 
     def __init__(self, client: AliyunARMSClient) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：绑定 ARMS 客户端，把云监控查询能力包装成项目统一的指标 provider。
         self._client = client
 
     async def get_metrics(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:

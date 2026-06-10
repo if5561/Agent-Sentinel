@@ -41,7 +41,7 @@ class LLMExecutor:
         metadata: dict[str, object] | None = None,
         **kwargs: object,
     ) -> str:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：统一执行一次模型调用，负责 mock、本地监控、多模型降级和最终错误汇总。
         if self.mock_enabled or not self.api_key:
             # mock 分支用于本地开发和测试，仍然记录耗时/token 指标以保持监控面板可用。
             logger.info("LLM mock call started prompt_chars=%s", len(prompt))
@@ -93,7 +93,7 @@ class LLMExecutor:
         metadata: dict[str, object] | None = None,
     ) -> str:
         # 单个模型内部用指数退避重试，模型列表层面再做跨模型 fallback。
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：对单个模型执行带超时和重试的真实调用，并记录耗时与 token 使用量。
         async for attempt in AsyncRetrying(
             stop=stop_after_attempt(self.max_retries),
             wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
@@ -151,23 +151,23 @@ class LLMExecutor:
 
     def set_trace_context(self, **values: object) -> object:
         # trace context 由工作流设置，LLM 调用层只负责透传给观测实现。
-        # 方法说明：更新已有资源或状态对象。
+        # 方法说明：把当前告警、任务等上下文写入观测追踪，后续模型调用会自动带上这些信息。
         return set_trace_context(**values)
 
     def reset_trace_context(self, token: object) -> None:
-        # 方法说明：更新已有资源或状态对象。
+        # 方法说明：模型调用结束后恢复旧的追踪上下文，避免不同诊断任务之间串数据。
         reset_trace_context(token)  # type: ignore[arg-type]
 
     def callbacks(self) -> list[object]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：暴露观测系统需要的回调列表，让 LangChain 执行过程能被采集。
         return self.langfuse.callbacks()  # type: ignore[attr-defined]
 
     async def flush_observability(self) -> None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：刷新观测缓冲区，确保本次诊断产生的追踪数据尽快写到外部系统。
         await self.langfuse.flush()  # type: ignore[attr-defined]
 
     def _mock_response(self, prompt: str, **_: object) -> str:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：在没有真实模型时按提示词类型返回模拟结果，让完整诊断流程仍可本地演示。
         lower = prompt.lower()
         # 根据提示词特征返回结构化 mock，保证不同节点的解析逻辑在无真实模型时也能跑通。
         if "feishu interactive alert workflow" in lower or "不要输出 json" in lower:
@@ -212,7 +212,7 @@ class LLMExecutor:
 
 def _extract_token_usage(response: object) -> tuple[int, int]:
     """Extract token usage from common LangChain/OpenAI response shapes."""
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：从不同模型响应格式里提取输入和输出 token 数，提取不到时返回 0 交给估算逻辑。
     usage = getattr(response, "usage_metadata", None)
     # LangChain 不同版本/不同 provider 的 token 字段位置不完全一致，这里做兼容提取。
     if isinstance(usage, dict):
@@ -231,5 +231,5 @@ def _extract_token_usage(response: object) -> tuple[int, int]:
 
 def _estimate_tokens(text: str) -> int:
     # 估算值只用于监控趋势，不用于计费或精确配额控制。
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：用字符长度粗略估算 token 数，保证没有真实用量时监控图也能看到趋势。
     return max(1, len(text) // 4) if text else 0

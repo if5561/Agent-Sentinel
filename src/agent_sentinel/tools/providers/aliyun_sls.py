@@ -75,7 +75,7 @@ class AliyunSLSClient:
         timeout_seconds: int = 10,
         max_lines: int = 100,
     ) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：保存 SLS 鉴权、项目、日志库和查询限制，SDK 客户端会在首次查询时懒加载。
         self._access_key_id = access_key_id
         self._access_key_secret = access_key_secret
         self._endpoint = endpoint
@@ -123,7 +123,7 @@ class AliyunSLSClient:
         Returns:
             日志列表，每条包含 timestamp 和 content
         """
-        # 方法说明：从配置的后端或数据集中检索匹配内容。
+        # 方法说明：执行一条 SLS 查询语句，并把云 SDK 返回的日志整理成统一字典列表。
         from aliyun.log import GetLogsRequest
         from aliyun.log.logclient import LogException
 
@@ -187,7 +187,7 @@ class SLSLogsProvider:
     """基于 SLS 的日志查询提供者"""
 
     def __init__(self, client: AliyunSLSClient) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：绑定 SLS 客户端，把阿里云日志查询能力包装成项目统一的日志 provider。
         self._client = client
 
     async def query_logs(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
@@ -200,7 +200,7 @@ class SLSLogsProvider:
         Returns:
             包含 matches 列表和统计信息的字典
         """
-        # 方法说明：从配置的后端或数据集中检索匹配内容。
+        # 方法说明：根据告警摘要生成候选 SLS 查询，返回命中的日志、级别统计和错误摘要。
         logger.info("Querying SLS logs summary_chars=%s group_id=%s", len(alert_summary), group_id)
 
         queries = self._build_queries(alert_summary)

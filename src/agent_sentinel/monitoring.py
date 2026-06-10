@@ -18,30 +18,30 @@ except ImportError:  # pragma: no cover - keeps local test env usable before dep
             return self
 
         def inc(self, _: float = 1.0) -> None:
-            # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+            # 方法说明：空实现的计数增加操作，缺少 Prometheus 依赖时让业务调用安全跳过。
             return None
 
         def dec(self, _: float = 1.0) -> None:
-            # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+            # 方法说明：空实现的计数减少操作，缺少 Prometheus 依赖时让活跃数打点不报错。
             return None
 
         def observe(self, _: float) -> None:
-            # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+            # 方法说明：空实现的耗时观测操作，缺少 Prometheus 依赖时丢弃观测值。
             return None
 
     class Counter(_NoopMetric):  # type: ignore[no-redef]
         def __init__(self, *_: object, **__: object) -> None:
-            # 方法说明：初始化对象，并保存后续调用需要的状态。
+            # 方法说明：模拟 Prometheus Counter 构造函数，让未安装依赖的环境也能导入模块。
             return None
 
     class Gauge(_NoopMetric):  # type: ignore[no-redef]
         def __init__(self, *_: object, **__: object) -> None:
-            # 方法说明：初始化对象，并保存后续调用需要的状态。
+            # 方法说明：模拟 Prometheus Gauge 构造函数，让活跃工作流指标在轻量环境下安全跳过。
             return None
 
     class Histogram(_NoopMetric):  # type: ignore[no-redef]
         def __init__(self, *_: object, **__: object) -> None:
-            # 方法说明：初始化对象，并保存后续调用需要的状态。
+            # 方法说明：模拟 Prometheus Histogram 构造函数，让耗时指标在无依赖环境下安全跳过。
             return None
 
     def generate_latest() -> bytes:  # type: ignore[no-redef]
@@ -58,7 +58,7 @@ class Monitor:
     """Manual Prometheus metrics for the AIOps LangGraph and Feishu workflow."""
 
     def __init__(self) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：定义工作流、模型、RAG、工具、反馈和错误相关的 Prometheus 指标。
         self.enabled = True
 
         # Node execution latency by LangGraph node name and group id.
@@ -142,7 +142,7 @@ class Monitor:
     @contextmanager
     def track_node(self, node_name: str, group_id: str | None = None) -> Iterator[None]:
         """Context manager example: `with monitor.track_node("retrieve", group_id): ...`."""
-        # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+        # 方法说明：包裹单个工作流节点，自动记录节点耗时、成功次数和失败次数。
         if not self.enabled:
             yield
             return
@@ -163,11 +163,11 @@ class Monitor:
 
     def track_node_async(self, node_name: str) -> Callable[[F], F]:
         """Async decorator example: `@monitor.track_node_async("understand")`."""
-        # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+        # 方法说明：生成异步节点装饰器，让节点函数不用手写监控打点代码。
 
         def decorator(func: F) -> F:
             @functools.wraps(func)
-            # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+            # 方法说明：实际包裹异步节点函数，执行时自动进入节点监控上下文。
             async def wrapper(state: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
                 # 方法说明：装饰异步节点函数，执行前后自动记录节点耗时和成功/失败次数。
                 with self.track_node(node_name, group_id_from_state(state)):
@@ -179,7 +179,7 @@ class Monitor:
 
     @contextmanager
     def track_workflow(self, workflow_type: str, group_id: str | None = None) -> Iterator[None]:
-        # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+        # 方法说明：包裹完整工作流，记录端到端耗时并维护当前活跃工作流数量。
         if not self.enabled:
             yield
             return
@@ -197,39 +197,39 @@ class Monitor:
             self.current_workflow_active.labels(**labels).dec()
 
     def record_llm_call(self, model: str, duration_seconds: float) -> None:
-        # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+        # 方法说明：记录一次模型调用耗时，用来观察不同模型的响应速度。
         if self.enabled:
             self.llm_call_duration_seconds.labels(model=_label(model)).observe(duration_seconds)
 
     def record_tokens(self, model: str, *, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
-        # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+        # 方法说明：累计模型输入和输出 token 数，帮助评估调用成本和上下文长度趋势。
         if not self.enabled:
             return
         self.token_consumption_total.labels(model=_label(model), token_type="prompt").inc(max(prompt_tokens, 0))
         self.token_consumption_total.labels(model=_label(model), token_type="completion").inc(max(completion_tokens, 0))
 
     def record_cache_hit(self, group_id: str | None = None) -> None:
-        # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+        # 方法说明：记录一次历史案例缓存命中，衡量相似告警复用效果。
         if self.enabled:
             self.workflow_cache_hit_total.labels(group_id=_label(group_id)).inc()
 
     def record_cache_miss(self, group_id: str | None = None) -> None:
-        # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+        # 方法说明：记录一次历史案例缓存未命中，帮助判断案例库覆盖是否不足。
         if self.enabled:
             self.workflow_cache_miss_total.labels(group_id=_label(group_id)).inc()
 
     def record_rag_retrieval(self, retriever: str, group_id: str | None = None) -> None:
-        # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+        # 方法说明：记录一次 RAG 检索请求，按检索器和群组统计知识检索使用量。
         if self.enabled:
             self.rag_retrieval_count_total.labels(retriever=_label(retriever), group_id=_label(group_id)).inc()
 
     def record_tool_call(self, tool_name: str, group_id: str | None = None, *, status: str = "success") -> None:
-        # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+        # 方法说明：记录一次外部工具调用，并区分成功或失败，便于发现工具链问题。
         if self.enabled:
             self.tool_call_count_total.labels(tool_name=_label(tool_name), group_id=_label(group_id), status=_label(status)).inc()
 
     def record_feedback(self, positive: bool, group_id: str | None = None) -> None:
-        # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+        # 方法说明：记录用户对诊断结果的正负反馈，用来评估智能诊断质量。
         if not self.enabled:
             return
         if positive:
@@ -238,7 +238,7 @@ class Monitor:
             self.feedback_negative_total.labels(group_id=_label(group_id)).inc()
 
     def record_error(self, error_type: str) -> None:
-        # 方法说明：记录可观测事件或监控指标，便于后续追踪。
+        # 方法说明：按错误类型累计异常次数，便于在监控面板里发现高频失败点。
         if self.enabled:
             self.error_count_total.labels(error_type=_label(error_type)).inc()
 

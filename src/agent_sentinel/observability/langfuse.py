@@ -69,7 +69,7 @@ def current_trace_id() -> str | None:
 
 class LangfuseHttpClient:
     def __init__(self, config: LangfuseConfig) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：保存 Langfuse 地址和认证信息，并创建复用的异步 HTTP 客户端。
         self.config = config
         self.host = str(config.host or "").rstrip("/")
         self._client = httpx.AsyncClient(
@@ -196,7 +196,7 @@ class LangfusePromptService:
         *,
         fallback_provider: PromptFallback | None = None,
     ) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：准备 Langfuse 提示词服务，包含远程客户端、兜底加载器、缓存和后台补链任务集合。
         self.config = config
         self.client = LangfuseHttpClient(config)
         self.fallback_provider = fallback_provider

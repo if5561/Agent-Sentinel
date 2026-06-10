@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 async def retrieve_node(state: DiagnosisState, retriever: BaseRetriever) -> DiagnosisState:
-    # 方法说明：从配置的后端或数据集中检索匹配内容。
+    # 方法说明：根据告警上下文执行 RAG 检索，把相关知识和历史经验整理成模型可阅读的文本。
     logger.info("Node retrieve started")
     monitor.record_rag_retrieval("hybrid", state.get("chat_id"))
     # 从告警上下文里抽取业务过滤条件，避免只靠语义相似度召回无关文档。

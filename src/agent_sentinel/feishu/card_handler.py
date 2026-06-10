@@ -29,18 +29,18 @@ class DecisionContext:
 
 class HumanDecisionStore:
     def __init__(self, redis_url: str | None = None) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：准备人工决策的临时存储，内存用于本进程快速读取，Redis 用于跨请求恢复。
         self.redis_url = redis_url
         self._redis: redis.Redis | None = None
         self._contexts: dict[str, DecisionContext] = {}
 
     async def open(self) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：在首次需要持久化人工决策时连接 Redis，避免启动阶段就强依赖外部服务。
         if self.redis_url and self._redis is None:
             self._redis = redis.from_url(self.redis_url, decode_responses=True)
 
     async def register_pending_decision(self, context: DecisionContext) -> None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：登记一条等待人工点击的决策记录，让后续飞书卡片回调能找回对应工作流。
         await self.open()
         self._contexts[context.decision_id] = context
         if self._redis:
@@ -56,7 +56,7 @@ class HumanDecisionStore:
         )
 
     async def get_decision_context(self, decision_id: str) -> DecisionContext | None:
-        # 方法说明：读取并返回当前流程需要的数据。
+        # 方法说明：根据决策编号查找原始上下文，先查本地内存，找不到再从 Redis 恢复。
         await self.open()
         context = self._contexts.get(decision_id)
         if context is not None:
@@ -72,7 +72,7 @@ class HumanDecisionStore:
         return context
 
     async def mark_decision_received(self, decision_id: str, decision: str, feedback: str = "") -> DecisionContext | None:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：把用户在飞书卡片上的选择写回决策上下文，供等待中的诊断流程继续向下走。
         context = await self.get_decision_context(decision_id)
         if context is None:
             return None
@@ -85,11 +85,11 @@ class HumanDecisionStore:
 
 class FeishuCardHandler:
     def __init__(self, decision_store: HumanDecisionStore) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：绑定人工决策存储，后续解析卡片点击时会把结果写入这里。
         self.decision_store = decision_store
 
     async def parse_callback(self, payload: dict[str, Any]) -> DecisionContext | None:
-        # 方法说明：解析输入内容，转换为业务逻辑使用的结构。
+        # 方法说明：解析飞书卡片回调，识别用户点击的是诊断确认、案例采用还是反馈学习。
         value = self._extract_value(payload)
         action = str(value.get("action") or "")
         allowed_decisions = {
@@ -107,14 +107,14 @@ class FeishuCardHandler:
         return await self.decision_store.mark_decision_received(decision_id, decision, feedback)
 
     async def handle(self, payload: dict[str, Any]) -> dict[str, str]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：处理飞书推来的卡片事件，并用简单状态告诉调用方本次事件是否被接受。
         context = await self.parse_callback(payload)
         if context is None:
             return {"status": "ignored"}
         return {"status": "ok"}
 
     def _extract_value(self, payload: dict[str, Any]) -> dict[str, Any]:
-        # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+        # 方法说明：兼容飞书不同回调格式，把真正的按钮参数统一取出来交给业务判断。
         action = payload.get("action")
         if isinstance(action, dict):
             value = action.get("value")

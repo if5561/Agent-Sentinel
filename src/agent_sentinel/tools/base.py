@@ -17,7 +17,7 @@ class LogsProvider(Protocol):
 
     async def query_logs(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
         """查询日志"""
-        # 方法说明：从配置的后端或数据集中检索匹配内容。
+        # 方法说明：定义“查询日志证据”的统一入口，不同实现可以去 SLS、MCP 或 mock 日志源取数。
         ...
 
 

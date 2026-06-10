@@ -66,7 +66,7 @@ class InteractiveTopicWorkflow:
         llm: LLMExecutor | None = None,
         checkpointer: Any | None = None,
     ) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：组装单卡片交互式诊断流程需要的发送器、检索器、案例库、模型和任务状态。
         self.sender = sender
         self.wait_seconds = wait_seconds
         self.retriever = retriever

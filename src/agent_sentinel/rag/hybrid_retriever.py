@@ -21,7 +21,7 @@ class HybridRetriever:
     mmr_lambda: float = 0.55
 
     async def retrieve(self, query: str, filters: RagFilters | None = None) -> list[RetrievedDoc]:
-        # 方法说明：从配置的后端或数据集中检索匹配内容。
+        # 方法说明：并行调用多个 RAG 检索器，再去重并用 MMR 选出最终要给模型看的上下文。
         if not self.retrievers:
             logger.info("Hybrid RAG skipped because no retrievers configured query_chars=%s", len(query or ""))
             return []
@@ -69,7 +69,7 @@ class HybridRetriever:
 
 
 def _dedupe_docs(docs: list[RetrievedDoc]) -> list[RetrievedDoc]:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：合并不同检索源返回的重复文档，只保留同一内容里得分最高的一条。
     by_key: dict[str, RetrievedDoc] = {}
     for doc in docs:
         # 不同检索源可能召回同一文档，按 source_type + id/text 前缀做轻量去重。
@@ -81,7 +81,7 @@ def _dedupe_docs(docs: list[RetrievedDoc]) -> list[RetrievedDoc]:
 
 
 def _format_doc_scores(docs: list[RetrievedDoc], limit: int = 5) -> str:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：把候选文档的来源、编号和分数压缩成日志字符串，方便排查检索排序。
     if not docs:
         return "[]"
     values = [f"{doc.source_type}:{doc.id}:{(doc.weighted_score or doc.score):.4f}" for doc in docs[:limit]]

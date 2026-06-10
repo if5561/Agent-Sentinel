@@ -25,7 +25,7 @@ class PlanOutput(BaseModel):
     @classmethod
     def normalize_recommended_plan(cls, value: Any) -> dict[str, Any]:
         # 模型输出可能是 dict/list/string，统一归一化成 dict 方便后续节点消费。
-        # 方法说明：解析输入内容，转换为业务逻辑使用的结构。
+        # 方法说明：把模型返回的方案统一转成字典，避免后续节点因为字符串或列表格式不同而处理失败。
         if isinstance(value, dict):
             return value
         if isinstance(value, list):

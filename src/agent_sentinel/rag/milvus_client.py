@@ -25,7 +25,7 @@ class MilvusSearchConfig:
 
 class MilvusVectorClient:
     def __init__(self, config: MilvusSearchConfig) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：保存 Milvus 连接配置，并延迟创建客户端，避免程序启动时立即连接向量库。
         self.config = config
         self._client: Any | None = None
 
@@ -39,7 +39,7 @@ class MilvusVectorClient:
         expr: str | None = None,
         output_fields: list[str] | None = None,
     ) -> list[RetrievedDoc]:
-        # 方法说明：从配置的后端或数据集中检索匹配内容。
+        # 方法说明：用查询向量在指定 Milvus 集合中做相似度搜索，并返回统一格式的检索文档。
         if not self.config.uri:
             logger.info("Milvus URI missing; search skipped collection=%s", collection_name)
             return []

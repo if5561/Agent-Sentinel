@@ -55,7 +55,7 @@ def jaccard_similarity(str1: str, str2: str) -> float:
 
 
 def extract_query_features(query: str) -> dict[str, Any]:
-    # 方法说明：解析输入内容，转换为业务逻辑使用的结构。
+    # 方法说明：从告警文本中提取类别、级别、错误码和关键词，供静态知识排序时判断匹配度。
     normalized = _normalize_text(query)
     tokens = set(_tokenize(query))
     alert_categories: set[str] = set()
@@ -159,7 +159,7 @@ class Reranker:
         api_format: str = "auto",
         timeout_seconds: int = 15,
     ) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：保存 reranker 的模型、设备和远程 API 配置，本地模型会在首次重排时再加载。
         self.model_name = model_name
         self.device = device
         self.api_endpoint = api_endpoint

@@ -74,7 +74,7 @@ class MockLogsProvider:
 
     @async_retry(max_attempts=2)
     async def query_logs(self, alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-        # 方法说明：从配置的后端或数据集中检索匹配内容。
+        # 方法说明：返回一组固定的模拟错误日志，方便本地演示日志证据如何进入诊断流程。
         async with asyncio.timeout(5):
             logger.info("Querying mock logs summary_chars=%s", len(alert_summary))
             await asyncio.sleep(0.05)
@@ -150,7 +150,7 @@ class MockToolsProvider:
     """Mock 工具提供者，组合所有 Mock 子提供者"""
 
     def __init__(self) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：组装 mock 指标、日志和拓扑 provider，让本地环境也能一次性获取完整现场数据。
         self._metrics = MockMetricsProvider()
         self._logs = MockLogsProvider()
         self._topology = MockTopologyProvider()
@@ -188,7 +188,7 @@ async def get_metrics(alert_summary: str, group_id: str | None = None) -> dict[s
 
 
 async def query_logs(alert_summary: str, group_id: str | None = None) -> dict[str, Any]:
-    # 方法说明：从配置的后端或数据集中检索匹配内容。
+    # 方法说明：向后兼容旧函数调用方式，内部转到 MockLogsProvider 查询模拟日志。
     return await MockLogsProvider().query_logs(alert_summary, group_id)
 
 

@@ -22,7 +22,7 @@ class CompositeToolsProvider:
         logs_provider: LogsProvider,
         topology_provider: TopologyProvider,
     ) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：把指标、日志和拓扑三个 provider 组合到一起，允许它们来自不同真实或 mock 后端。
         self._metrics = metrics_provider
         self._logs = logs_provider
         self._topology = topology_provider

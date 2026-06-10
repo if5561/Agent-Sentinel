@@ -30,7 +30,7 @@ class HistoryCaseStore:
         top_k: int = 2,
         threshold: float | None = None,
     ) -> list[RetrievedDoc]:
-        # 方法说明：从配置的后端或数据集中检索匹配内容。
+        # 方法说明：在历史案例库中查找与当前告警足够相似的已验证案例，用于快速复用处理方案。
         if not alert_text.strip():
             logger.info("History case search skipped empty alert_text")
             return []

@@ -30,7 +30,7 @@ class MCPStdioClient:
     """Minimal MCP JSON-RPC client for stdio servers."""
 
     def __init__(self, config: MCPToolConfig) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：保存 MCP 子进程启动配置，并准备请求编号、进程句柄和串行调用锁。
         self._config = config
         self._request_id = 0
         self._process: asyncio.subprocess.Process | None = None
@@ -153,7 +153,7 @@ class MCPStdioClient:
 
 class MCPLogsProvider:
     def __init__(self, client: MCPStdioClient, config: MCPToolConfig) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：绑定 MCP 客户端和日志工具名，后续日志查询会通过 MCP Server 转发。
         self._client = client
         self._config = config
 
@@ -185,7 +185,7 @@ class MCPLogsProvider:
 
 class MCPMetricsProvider:
     def __init__(self, client: MCPStdioClient, config: MCPToolConfig) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：绑定 MCP 客户端和 Prometheus 工具名，后续指标查询会通过 MCP Server 转发。
         self._client = client
         self._config = config
 
@@ -217,7 +217,7 @@ class MCPMetricsProvider:
 
 class MCPToolsProvider:
     def __init__(self, config: MCPToolConfig, client: MCPStdioClient | None = None) -> None:
-        # 方法说明：初始化对象，并保存后续调用需要的状态。
+        # 方法说明：组装 MCP 指标、MCP 日志和 mock 拓扑 provider，形成完整工具接口。
         self._config = config
         self._client = client or MCPStdioClient(config)
         self._metrics = MCPMetricsProvider(self._client, config)

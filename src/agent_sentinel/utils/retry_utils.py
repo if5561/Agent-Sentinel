@@ -9,7 +9,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 def async_retry(max_attempts: int = 2) -> Callable[[F], F]:
-    # 方法说明：封装当前处理步骤，保持调用方关注输入和输出。
+    # 方法说明：生成异步重试装饰器，遇到临时异常时按指数退避重试，最后仍失败就抛出原异常。
     return retry(
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=0.5, min=0.5, max=3),
