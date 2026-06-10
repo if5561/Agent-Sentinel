@@ -30,36 +30,22 @@ from agent_sentinel.rag.factory import build_retriever
 from agent_sentinel.rag.history_cases import HistoryCaseStore, build_history_case_store
 from agent_sentinel.utils.config_loader import load_yaml
 
-# 将 logger 的值保存下来，供后续流程判断或组装响应时使用。
 logger = logging.getLogger(__name__)
 
-# 将 NodeFn 的值保存下来，供后续流程判断或组装响应时使用。
 NodeFn = Callable[[DiagnosisState], Awaitable[DiagnosisState]]
 
 
-# 定义 DiagnosisWorkflow 组件，集中管理这个模块的状态和行为。
 class DiagnosisWorkflow:
-    # 定义 __init__ 相关的处理逻辑，供流程或外部调用复用。
     def __init__(
-        # 执行当前业务步骤，推动流程继续向下游推进。
         self,
-        # 执行当前业务步骤，推动流程继续向下游推进。
         *,
-        # 执行当前业务步骤，推动流程继续向下游推进。
         settings: Settings,
-        # 执行当前业务步骤，推动流程继续向下游推进。
         llm: LLMExecutor,
-        # 执行当前业务步骤，推动流程继续向下游推进。
         sender: FeishuSender,
-        # 执行当前业务步骤，推动流程继续向下游推进。
         decision_store: HumanDecisionStore,
-        # 将 retriever 的值保存下来，供后续流程判断或组装响应时使用。
         retriever: BaseRetriever | None = None,
-        # 将 case_store 的值保存下来，供后续流程判断或组装响应时使用。
         case_store: HistoryCaseStore | None = None,
-        # 将 checkpointer 的值保存下来，供后续流程判断或组装响应时使用。
         checkpointer: Any | None = None,
-    # 执行当前业务步骤，推动流程继续向下游推进。
     ) -> None:
         # 保存运行配置，供流程构建和节点执行时读取。
         self.settings = settings
@@ -78,11 +64,9 @@ class DiagnosisWorkflow:
         # 缓存已编译的流程图，避免重复构建。
         self._compiled: Any | None = None
 
-    # 定义 compile 相关的处理逻辑，供流程或外部调用复用。
     def compile(self) -> Any:
         # 把 workflow.yaml 里的节点和连线编译成可执行流程，相当于生成一张诊断流程图。
         if self._compiled is not None:
-            # 返回当前步骤整理后的结果，交给调用方或流程下游继续使用。
             return self._compiled
         # workflow.yaml 负责声明节点和边，代码里的 registry 只提供可执行函数映射。
         workflow_config = load_yaml(self.settings.aiops_workflow_config_path)
@@ -91,17 +75,12 @@ class DiagnosisWorkflow:
         # 获取节点名称到可执行函数的映射
         registry = self._node_registry()
 
-        # 将 nodes 的值保存下来，供后续流程判断或组装响应时使用。
         nodes = workflow_config.get("nodes", [])
-        # 根据 not nodes 判断当前流程该进入哪个处理分支。
         if not nodes:
-            # 在输入或运行状态不满足要求时抛出异常，阻止错误结果继续扩散。
             raise ValueError("workflow.yaml must define nodes.")
         # 遍历配置中的节点定义，逐一注册到状态图
         for item in nodes:
-            # 将 name 的值保存下来，供后续流程判断或组装响应时使用。
             name = str(item["name"])
-            # 调用 graph.add_node 完成当前步骤需要的业务处理。
             graph.add_node(name, registry[name])
 
         # 设置图的入口节点为配置中的第一个节点
@@ -109,35 +88,26 @@ class DiagnosisWorkflow:
 
         # 注册普通边，表示节点之间的固定跳转
         for edge in workflow_config.get("edges", []):
-            # 调用 graph.add_edge 完成当前步骤需要的业务处理。
             graph.add_edge(str(edge["from"]), str(edge["to"]))
 
         # 获取条件路由函数映射
         route_registry = self._route_registry()
         # 注册条件边，根据运行时状态决定跳转目标
         for edge in workflow_config.get("conditional_edges", []):
-            # 将 source 的值保存下来，供后续流程判断或组装响应时使用。
             source = str(edge["from"])
-            # 将 condition_name 的值保存下来，供后续流程判断或组装响应时使用。
             condition_name = str(edge["condition"])
             # 配置文件用字符串 END 保持可读性，编译时转换成 LangGraph 的终止节点常量。
             mapping = {
-                # 调用 str 完成当前步骤需要的业务处理。
                 str(key): END if value == "END" else str(value)
-                # 遍历当前集合中的每一项，逐步完成聚合或转换处理。
                 for key, value in dict(edge["mapping"]).items()
             }
-            # 调用 graph.add_conditional_edges 完成当前步骤需要的业务处理。
             graph.add_conditional_edges(source, route_registry[condition_name], mapping)
 
         # 编译图并注入检查点持久化器，支持断点续跑和状态恢复
         self._compiled = graph.compile(checkpointer=self.checkpointer)
-        # 记录关键运行信息，方便排查流程进展和异常现场。
         logger.info("LangGraph workflow compiled nodes=%s", [item["name"] for item in nodes])
-        # 返回当前步骤整理后的结果，交给调用方或流程下游继续使用。
         return self._compiled
 
-    # 定义 run_streaming 相关的处理逻辑，供流程或外部调用复用。
     async def run_streaming(self, initial_state: DiagnosisState) -> DiagnosisState:
         # 获取已编译的流程图，后续直接用它驱动诊断任务。
         app = self.compile()
@@ -151,72 +121,47 @@ class DiagnosisWorkflow:
         metadata = self._langfuse_metadata(initial_state)
         # thread_id 是 LangGraph checkpointer 的会话键；metadata 用于日志和观测平台串联同一次诊断。
         config = {
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "configurable": {
-                # 执行当前业务步骤，推动流程继续向下游推进。
                 "thread_id": workflow_thread_id,
-                # 执行当前业务步骤，推动流程继续向下游推进。
                 "trace_id": trace_id,
-                # 执行当前业务步骤，推动流程继续向下游推进。
                 "workflow_thread_id": workflow_thread_id,
-                # 调用 initial_state.get 完成当前步骤需要的业务处理。
                 "workflow_run_id": initial_state.get("workflow_run_id"),
-                # 调用 initial_state.get 完成当前步骤需要的业务处理。
                 "chat_id": initial_state.get("chat_id"),
             },
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "recursion_limit": 20,
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "metadata": metadata,
         }
         # 记录本次诊断启动日志，重点输出 trace、线程、运行 ID 和原始告警字段。
         logger.info(
-            # 保存当前计算结果，供后续流程判断或组装响应时使用。
             "Diagnosis LangGraph run start trace_id=%s workflow_thread_id=%s workflow_run_id=%s chat_id=%s raw_alert_keys=%s",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             trace_id,
-            # 执行当前业务步骤，推动流程继续向下游推进。
             workflow_thread_id,
-            # 调用 initial_state.get 完成当前步骤需要的业务处理。
             initial_state.get("workflow_run_id"),
-            # 调用 initial_state.get 完成当前步骤需要的业务处理。
             initial_state.get("chat_id"),
-            # 调用 sorted 完成当前步骤需要的业务处理。
             sorted((initial_state.get("raw_alert") or {}).keys()),
         )
         # final_state 从初始状态拷贝开始，后面每个节点返回增量时持续合并进去。
         final_state: DiagnosisState = dict(initial_state)
         # LLM 调用通过 contextvars 读取 trace 上下文，确保节点内部多次调用也归属同一链路。
         token = self.llm.set_trace_context(**metadata)
-        # 进入可能失败的处理块，便于后续统一捕获和恢复。
         try:
             # 用 Prometheus 监控包住整条诊断流程，统计端到端耗时和活跃工作流数量。
             with monitor.track_workflow("diagnosis", initial_state.get("chat_id")):
                 # 以 updates 模式流式运行图，LangGraph 每完成一个节点就会返回该节点的状态增量。
                 async for update in app.astream(
-                    # 执行当前业务步骤，推动流程继续向下游推进。
                     initial_state,
-                    # 将 config 的值保存下来，供后续流程判断或组装响应时使用。
                     config=config,
-                    # 将 stream_mode 的值保存下来，供后续流程判断或组装响应时使用。
                     stream_mode="updates",
                 ):
                     # 一个 update 可能包含一个或多个节点结果，逐个合并并发送进度。
                     for node_name, node_update in update.items():
-                        # 记录关键运行信息，方便排查流程进展和异常现场。
                         logger.info(
-                            # 保存当前计算结果，供后续流程判断或组装响应时使用。
                             "Diagnosis LangGraph node update trace_id=%s workflow_thread_id=%s node=%s update_keys=%s",
-                            # 执行当前业务步骤，推动流程继续向下游推进。
                             trace_id,
-                            # 执行当前业务步骤，推动流程继续向下游推进。
                             workflow_thread_id,
-                            # 执行当前业务步骤，推动流程继续向下游推进。
                             node_name,
-                            # 调用 sorted 完成当前步骤需要的业务处理。
                             sorted(node_update.keys()) if isinstance(node_update, dict) else type(node_update).__name__,
                         )
-                        # 根据 isinstance(node_update, dict) 判断当前流程该进入哪个处理分支。
                         if isinstance(node_update, dict):
                             # streaming 返回的是节点增量，合并后形成 API 层可直接返回的最终状态视图。
                             final_state.update(node_update)
@@ -224,33 +169,23 @@ class DiagnosisWorkflow:
                         await self._send_progress(node_name, final_state)
                 # 流式执行结束后再从 checkpointer 读取一次最终状态，补齐未在 streaming 中显式返回的字段。
                 state_snapshot = await app.aget_state(config)
-                # 将 final_values 的值保存下来，供后续流程判断或组装响应时使用。
                 final_values = getattr(state_snapshot, "values", None)
-                # 根据 isinstance(final_values, dict) 判断当前流程该进入哪个处理分支。
                 if isinstance(final_values, dict):
                     # 用 checkpointer 中的最终状态兜底，覆盖 streaming 中可能未显式返回的字段。
                     final_state.update(final_values)
-        # 无论前面的流程是否成功，都执行资源清理或上下文恢复。
         finally:
             # 无论流程成功还是失败，都恢复 LLM trace 上下文，避免污染下一次请求。
             self.llm.reset_trace_context(token)
         # 输出完成日志，包含最终状态字段和总耗时，方便排查流程是否完整走完。
         logger.info(
-            # 保存当前计算结果，供后续流程判断或组装响应时使用。
             "Diagnosis LangGraph run completed trace_id=%s workflow_thread_id=%s final_keys=%s elapsed_ms=%s",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             trace_id,
-            # 执行当前业务步骤，推动流程继续向下游推进。
             workflow_thread_id,
-            # 调用 sorted 完成当前步骤需要的业务处理。
             sorted(final_state.keys()),
-            # 调用 int 完成当前步骤需要的业务处理。
             int((time.perf_counter() - started) * 1000),
         )
-        # 返回当前步骤整理后的结果，交给调用方或流程下游继续使用。
         return final_state
 
-    # 定义 resume 相关的处理逻辑，供流程或外部调用复用。
     async def resume(self, workflow_thread_id: str, resume_payload: dict[str, Any]) -> DiagnosisState:
         # 获取已编译的流程图，恢复执行时必须使用同一套节点和边定义。
         app = self.compile()
@@ -258,18 +193,14 @@ class DiagnosisWorkflow:
         started = time.perf_counter()
         # 恢复前先读取已挂起线程的状态，才能重建 trace、chat_id 和业务上下文。
         base_config = {
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "configurable": {"thread_id": workflow_thread_id},
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "recursion_limit": 20,
         }
         # 根据 thread_id 从 checkpointer 读取暂停前的状态快照。
         state_snapshot = await app.aget_state(base_config)
         # final_state 用于承接旧状态和恢复后每个节点返回的新状态。
         final_state: DiagnosisState = {}
-        # 将 values 的值保存下来，供后续流程判断或组装响应时使用。
         values = getattr(state_snapshot, "values", None)
-        # 根据 isinstance(values, dict) 判断当前流程该进入哪个处理分支。
         if isinstance(values, dict):
             # 如果快照里有状态值，先恢复到 final_state，后续再在此基础上合并增量。
             final_state.update(values)
@@ -279,135 +210,88 @@ class DiagnosisWorkflow:
         metadata = self._langfuse_metadata(final_state)
         # resume 沿用同一个 thread_id，让 LangGraph 从 interrupt 停住的位置继续执行。
         config = {
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "configurable": {
-                # 执行当前业务步骤，推动流程继续向下游推进。
                 "thread_id": workflow_thread_id,
-                # 执行当前业务步骤，推动流程继续向下游推进。
                 "trace_id": trace_id,
-                # 执行当前业务步骤，推动流程继续向下游推进。
                 "workflow_thread_id": workflow_thread_id,
-                # 调用 final_state.get 完成当前步骤需要的业务处理。
                 "workflow_run_id": final_state.get("workflow_run_id"),
-                # 调用 final_state.get 完成当前步骤需要的业务处理。
                 "chat_id": final_state.get("chat_id"),
             },
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "recursion_limit": 20,
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "metadata": metadata,
         }
         # 输出恢复启动日志，方便确认本次人工回调传入了哪些恢复参数。
         logger.info(
-            # 保存当前计算结果，供后续流程判断或组装响应时使用。
             "Diagnosis LangGraph resume start trace_id=%s workflow_thread_id=%s resume_keys=%s existing_keys=%s",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             trace_id,
-            # 执行当前业务步骤，推动流程继续向下游推进。
             workflow_thread_id,
-            # 调用 sorted 完成当前步骤需要的业务处理。
             sorted(resume_payload.keys()),
-            # 调用 sorted 完成当前步骤需要的业务处理。
             sorted(final_state.keys()),
         )
         # 将恢复阶段的 trace 信息写入 LLM 执行器，保证后续节点模型调用仍能被观测系统串联。
         token = self.llm.set_trace_context(**metadata)
-        # 进入可能失败的处理块，便于后续统一捕获和恢复。
         try:
             # 单独用 diagnosis_resume 统计恢复流程耗时，便于和首次运行区分。
             with monitor.track_workflow("diagnosis_resume", final_state.get("chat_id")):
                 # Command(resume=...) 会把人工确认结果交回 LangGraph，让流程从 interrupt 处继续。
                 async for update in app.astream(
-                    # 保存当前计算结果，供后续流程判断或组装响应时使用。
                     Command(resume=resume_payload),
-                    # 将 config 的值保存下来，供后续流程判断或组装响应时使用。
                     config=config,
-                    # 将 stream_mode 的值保存下来，供后续流程判断或组装响应时使用。
                     stream_mode="updates",
                 ):
                     # 恢复后的每个节点仍然按增量返回，逐个合并到最终状态里。
                     for node_name, node_update in update.items():
-                        # 记录关键运行信息，方便排查流程进展和异常现场。
                         logger.info(
-                            # 保存当前计算结果，供后续流程判断或组装响应时使用。
                             "Diagnosis LangGraph resume node update trace_id=%s workflow_thread_id=%s node=%s update_keys=%s",
-                            # 执行当前业务步骤，推动流程继续向下游推进。
                             trace_id,
-                            # 执行当前业务步骤，推动流程继续向下游推进。
                             workflow_thread_id,
-                            # 执行当前业务步骤，推动流程继续向下游推进。
                             node_name,
-                            # 调用 sorted 完成当前步骤需要的业务处理。
                             sorted(node_update.keys()) if isinstance(node_update, dict) else type(node_update).__name__,
                         )
-                        # 根据 isinstance(node_update, dict) 判断当前流程该进入哪个处理分支。
                         if isinstance(node_update, dict):
-                            # 把新的状态合并回上下文，保证后续步骤读取到最新数据。
                             final_state.update(node_update)
                         # 恢复执行期间也继续发送进度消息，保持用户侧体验一致。
                         await self._send_progress(node_name, final_state)
                 # 恢复完成后再读一次 checkpointer，确保最终状态和持久化状态一致。
                 state_snapshot = await app.aget_state(config)
-                # 将 final_values 的值保存下来，供后续流程判断或组装响应时使用。
                 final_values = getattr(state_snapshot, "values", None)
-                # 根据 isinstance(final_values, dict) 判断当前流程该进入哪个处理分支。
                 if isinstance(final_values, dict):
-                    # 把新的状态合并回上下文，保证后续步骤读取到最新数据。
                     final_state.update(final_values)
-        # 无论前面的流程是否成功，都执行资源清理或上下文恢复。
         finally:
             # 清理本次 resume 写入的 LLM trace 上下文。
             self.llm.reset_trace_context(token)
         # 输出 resume 完成日志，记录最终状态字段和耗时。
         logger.info(
-            # 保存当前计算结果，供后续流程判断或组装响应时使用。
             "Diagnosis LangGraph resume completed trace_id=%s workflow_thread_id=%s final_keys=%s elapsed_ms=%s",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             trace_id,
-            # 执行当前业务步骤，推动流程继续向下游推进。
             workflow_thread_id,
-            # 调用 sorted 完成当前步骤需要的业务处理。
             sorted(final_state.keys()),
-            # 调用 int 完成当前步骤需要的业务处理。
             int((time.perf_counter() - started) * 1000),
         )
-        # 返回当前步骤整理后的结果，交给调用方或流程下游继续使用。
         return final_state
 
-    # 定义 update_state 相关的处理逻辑，供流程或外部调用复用。
     async def update_state(self, workflow_thread_id: str, state_update: dict[str, Any]) -> None:
         # 获取已编译的流程图，状态更新需要通过 LangGraph 应用实例写入 checkpointer。
         app = self.compile()
         # 按 thread_id 定位要更新的诊断线程，把外部补充字段合并到该线程状态里。
         await app.aupdate_state(
-            # 执行当前业务步骤，推动流程继续向下游推进。
             {"configurable": {"thread_id": workflow_thread_id}, "recursion_limit": 20},
-            # 执行当前业务步骤，推动流程继续向下游推进。
             state_update,
         )
 
-    # 定义 _node_registry 相关的处理逻辑，供流程或外部调用复用。
     def _node_registry(self) -> dict[str, NodeFn]:
         # partial 在这里注入外部依赖，让各节点函数保持“输入 state，输出 state 增量”的简单形态。
         # registry 的 key 必须和 workflow.yaml 中的节点名一致，value 是该节点真正要执行的函数。
         registry = {
             # understand 节点负责理解告警，并可在历史案例缓存命中时提前给出候选方案。
             "understand": partial(
-                # 执行当前业务步骤，推动流程继续向下游推进。
                 understand_node,
-                # 将 llm 的值保存下来，供后续流程判断或组装响应时使用。
                 llm=self.llm,
-                # 将 case_store 的值保存下来，供后续流程判断或组装响应时使用。
                 case_store=self.case_store,
-                # 将 sender 的值保存下来，供后续流程判断或组装响应时使用。
                 sender=self.sender,
-                # 将 decision_store 的值保存下来，供后续流程判断或组装响应时使用。
                 decision_store=self.decision_store,
-                # 将 cache_top_k 的值保存下来，供后续流程判断或组装响应时使用。
                 cache_top_k=self.settings.rag_case_cache_top_k,
-                # 将 cache_threshold 的值保存下来，供后续流程判断或组装响应时使用。
                 cache_threshold=self.settings.rag_case_cache_threshold,
-                # 将 cache_enabled 的值保存下来，供后续流程判断或组装响应时使用。
                 cache_enabled=self.settings.rag_case_cache_enabled,
             ),
             # retrieve 节点负责 RAG 检索，把知识库和历史经验补充进状态。
@@ -420,57 +304,41 @@ class DiagnosisWorkflow:
             "validate": partial(validate_plan_node, llm=self.llm),
             # human_confirm 节点负责把方案发给人确认，并在需要时暂停流程。
             "human_confirm": partial(
-                # 执行当前业务步骤，推动流程继续向下游推进。
                 human_confirm_node,
-                # 将 sender 的值保存下来，供后续流程判断或组装响应时使用。
                 sender=self.sender,
-                # 将 decision_store 的值保存下来，供后续流程判断或组装响应时使用。
                 decision_store=self.decision_store,
-                # 将 timeout_seconds 的值保存下来，供后续流程判断或组装响应时使用。
                 timeout_seconds=self.settings.aiops_human_confirm_timeout_seconds,
-                # 将 enabled 的值保存下来，供后续流程判断或组装响应时使用。
                 enabled=self.settings.aiops_human_confirm_enabled,
             ),
             # final_result 节点负责发送最终诊断结果。
             "final_result": partial(final_result_node, sender=self.sender),
             # feedback_learning 节点根据用户反馈决定是否把本次诊断沉淀成历史案例。
             "feedback_learning": partial(
-                # 执行当前业务步骤，推动流程继续向下游推进。
                 feedback_learning_node,
-                # 将 sender 的值保存下来，供后续流程判断或组装响应时使用。
                 sender=self.sender,
-                # 将 decision_store 的值保存下来，供后续流程判断或组装响应时使用。
                 decision_store=self.decision_store,
-                # 将 case_store 的值保存下来，供后续流程判断或组装响应时使用。
                 case_store=self.case_store,
-                # 将 enabled 的值保存下来，供后续流程判断或组装响应时使用。
                 enabled=self.settings.rag_feedback_enabled,
             ),
         }
         # 所有节点统一包一层监控和日志，避免每个 agent 重复写相同的埋点逻辑。
         return {name: self._track_node(name, node) for name, node in registry.items()}
 
-    # 定义 _track_node 相关的处理逻辑，供流程或外部调用复用。
     def _track_node(self, node_name: str, node: NodeFn) -> NodeFn:
         # 返回一个包裹后的节点函数，LangGraph 实际执行的是 wrapped。
         async def wrapped(state: DiagnosisState) -> DiagnosisState:
             # 每次节点执行前先从状态里提取 trace_id，保证日志能关联到同一次诊断。
             trace_id = trace_id_from_state(state)
-            # 记录关键运行信息，方便排查流程进展和异常现场。
             logger.info("Diagnosis node execution start trace_id=%s node=%s", trace_id, node_name)
             # monitor.track_node 会自动记录节点耗时和成功/失败次数。
             with monitor.track_node(node_name, state.get("chat_id")):
-                # 将 result 的值保存下来，供后续流程判断或组装响应时使用。
                 result = await node(state)
             # 节点执行完成后记录日志，便于和 start 日志配对查看耗时和异常位置。
             logger.info("Diagnosis node execution completed trace_id=%s node=%s", trace_id, node_name)
-            # 返回当前步骤整理后的结果，交给调用方或流程下游继续使用。
             return result
 
-        # 返回当前步骤整理后的结果，交给调用方或流程下游继续使用。
         return wrapped
 
-    # 定义 _route_registry 相关的处理逻辑，供流程或外部调用复用。
     def _route_registry(self) -> dict[str, Callable[[DiagnosisState], str]]:
         # 路由函数返回值必须和 workflow.yaml 里的 conditional_edges.mapping key 保持一致。
         # 这些函数只负责返回路由 key，真正跳到哪个节点由 workflow.yaml 的 mapping 决定。
@@ -485,109 +353,68 @@ class DiagnosisWorkflow:
             "human_decision": lambda state: state.get("human_decision", "timeout"),
             # always 和 end 是配置文件中使用的简单路由占位。
             "always": lambda state: "next",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "end": lambda state: "end",
         }
 
-    # 定义 _send_progress 相关的处理逻辑，供流程或外部调用复用。
     async def _send_progress(self, node_name: str, state: DiagnosisState) -> None:
         # 进度消息是用户体验层增强；真正的流程状态仍以 LangGraph state 为准。
         # 不同节点对应不同的人类可读提示，便于用户理解当前诊断进度。
         status = {
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "understand": "✅ 已完成告警理解（缓存查找），正在检索历史案例...",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "retrieve": "✅ 历史案例检索完成，正在判断是否需要实时数据...",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "fetch_live_data": "✅ 实时指标、日志、拓扑已获取，正在生成诊断方案...",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "generate_plan": "✅ 诊断方案已生成，正在进行安全校验...",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "validate": "✅ 方案校验完成，等待人工确认...",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "human_confirm": "✅ 人工确认流程结束，正在发送最终结果...",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "final_result": "✅ 最终诊断结果已发送。",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "feedback_learning": "✅ 反馈学习流程结束。",
-        # 调用 get 完成当前步骤需要的业务处理。
         }.get(node_name)
-        # 根据 not status 判断当前流程该进入哪个处理分支。
         if not status:
             # 没有配置提示文案的节点不发送进度消息，避免飞书里出现无意义提醒。
             return
         # 记录发送进度前的关键信息，方便排查飞书消息是否发到正确会话和话题。
         logger.info(
-            # 保存当前计算结果，供后续流程判断或组装响应时使用。
             "Sending workflow progress node=%s chat_id=%s thread_root_message_id=%s status=%s",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             node_name,
-            # 调用 state.get 完成当前步骤需要的业务处理。
             state.get("chat_id"),
-            # 调用 state.get 完成当前步骤需要的业务处理。
             state.get("thread_root_message_id"),
-            # 执行当前业务步骤，推动流程继续向下游推进。
             status,
         )
         # 进度消息回复到原话题下，避免一次诊断在群里刷出多条独立消息。
         await self.sender.send_message(
-            # 调用 state.get 完成当前步骤需要的业务处理。
             state.get("chat_id"),
-            # 执行当前业务步骤，推动流程继续向下游推进。
             status,
-            # 将 thread_root_message_id 的值保存下来，供后续流程判断或组装响应时使用。
             thread_root_message_id=state.get("thread_root_message_id"),
         )
 
-    # 定义 _langfuse_metadata 相关的处理逻辑，供流程或外部调用复用。
     def _langfuse_metadata(self, state: DiagnosisState) -> dict[str, object]:
         # trace_id 是业务链路的核心标识，Langfuse、日志和节点状态都会使用它。
         trace_id = trace_id_from_state(state)
         # 观测元数据同时携带业务 trace 和工作流线程 ID，便于从日志跳到模型调用链路。
         return {
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "trace_id": trace_id,
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "business_trace_id": trace_id,
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "trace_name": "diagnosis",
-            # 调用 state.get 完成当前步骤需要的业务处理。
             "workflow_thread_id": state.get("workflow_thread_id"),
-            # 调用 state.get 完成当前步骤需要的业务处理。
             "workflow_run_id": state.get("workflow_run_id"),
-            # 调用 state.get 完成当前步骤需要的业务处理。
             "chat_id": state.get("chat_id"),
-            # 调用 state.get 完成当前步骤需要的业务处理。
             "thread_root_message_id": state.get("thread_root_message_id"),
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "app_env": self.settings.app_env,
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "workflow_type": "diagnosis",
-            # 执行当前业务步骤，推动流程继续向下游推进。
             "tags": ["agent-sentinel", "diagnosis", "feishu", self.settings.app_env],
         }
 
 
-# 定义 build_llm_executor 相关的处理逻辑，供流程或外部调用复用。
 def build_llm_executor(settings: Settings) -> LLMExecutor:
     # 根据配置创建模型执行器，内部会处理多模型 fallback、重试和观测上报。
     return LLMExecutor(
-        # 将 models 的值保存下来，供后续流程判断或组装响应时使用。
         models=settings.aiops_llm_models,
-        # 将 api_key 的值保存下来，供后续流程判断或组装响应时使用。
         api_key=settings.openai_api_key,
-        # 将 base_url 的值保存下来，供后续流程判断或组装响应时使用。
         base_url=settings.openai_base_url,
-        # 将 temperature 的值保存下来，供后续流程判断或组装响应时使用。
         temperature=settings.openai_temperature,
-        # 将 trust_env 的值保存下来，供后续流程判断或组装响应时使用。
         trust_env=settings.openai_http_trust_env,
-        # 将 timeout_seconds 的值保存下来，供后续流程判断或组装响应时使用。
         timeout_seconds=settings.aiops_llm_timeout_seconds,
-        # 将 max_retries 的值保存下来，供后续流程判断或组装响应时使用。
         max_retries=settings.aiops_llm_max_retries,
-        # 将 mock_enabled 的值保存下来，供后续流程判断或组装响应时使用。
         mock_enabled=settings.aiops_mock_llm_enabled,
-        # 将 langfuse 的值保存下来，供后续流程判断或组装响应时使用。
         langfuse=build_langfuse_prompt_service(settings.langfuse),
     )
