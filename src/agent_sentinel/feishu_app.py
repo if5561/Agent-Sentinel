@@ -17,11 +17,15 @@ logger = logging.getLogger(__name__)
 
 class FeishuBotClient:
     def __init__(self, settings: Settings, timeout: int = 15) -> None:
-        # 保存飞书应用配置，并准备 token 缓存和锁，减少重复鉴权请求。
+        # 保存飞书应用配置，供后续鉴权和接口请求使用。
         self.settings = settings
+        # 记录请求超时时间，避免飞书接口调用长时间阻塞。
         self.timeout = timeout
+        # 缓存租户访问令牌，减少重复鉴权请求。
         self._token: str | None = None
+        # 记录令牌过期时间，用于判断是否需要刷新。
         self._token_expire_at = 0.0
+        # 使用锁保护令牌刷新流程，避免并发请求重复刷新。
         self._lock = threading.Lock()
 
     def is_configured(self) -> bool:

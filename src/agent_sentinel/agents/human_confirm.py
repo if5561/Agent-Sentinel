@@ -30,8 +30,10 @@ async def human_confirm_node(
             "messages": append_message(state, "assistant", "无需人工确认，自动继续。"),
         }
 
+    # decision_id 贯穿发卡、回调解析和 LangGraph resume，确保按钮点击能回到当前诊断线程。
     decision_id = state.get("decision_id") or str(uuid.uuid4())
     if not state.get("human_card_sent", False):
+        # 先登记待决策上下文，再发卡，避免用户快速点击时找不到对应 workflow_thread_id。
         await decision_store.register_pending_decision(
             DecisionContext(
                 decision_id=decision_id,
@@ -41,6 +43,7 @@ async def human_confirm_node(
                 thread_root_message_id=state.get("thread_root_message_id"),
             )
         )
+        # 卡片携带 decision_id、workflow_thread_id 和 run_id，回调时可准确恢复 interrupt。
         await sender.send_card(
             state.get("chat_id"),
             decision_id,
@@ -51,6 +54,7 @@ async def human_confirm_node(
             thread_root_message_id=state.get("thread_root_message_id"),
         )
 
+    # interrupt 会暂停节点执行，直到飞书回调通过 Command(resume=...) 注入用户决策。
     resume_payload = interrupt(
         {
             "decision_id": decision_id,

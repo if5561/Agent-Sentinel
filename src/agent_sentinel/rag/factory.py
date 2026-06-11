@@ -52,6 +52,7 @@ def build_retriever(settings: Settings) -> BaseRetriever:
 
     retrievers: list[BaseRetriever] = []
     if settings.rag_static_enabled:
+        # 静态知识库用于召回预案、手册和故障说明，权重由配置控制。
         retrievers.append(
             StaticDocRetriever(
                 milvus=milvus,
@@ -65,6 +66,7 @@ def build_retriever(settings: Settings) -> BaseRetriever:
             )
         )
     if settings.rag_message_enabled:
+        # 历史消息库用于召回过往群聊和案例经验，与静态文档一起进入混合排序。
         retrievers.append(
             MessageHistoryRetriever(
                 milvus=milvus,

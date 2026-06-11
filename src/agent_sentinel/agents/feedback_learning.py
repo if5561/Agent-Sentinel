@@ -35,10 +35,12 @@ async def feedback_learning_node(
         f"{workflow_thread_id}:case-feedback" if workflow_thread_id else str(uuid.uuid4())
     )
 
+    # 若回调已提前写入决策上下文，直接复用结果，避免重复发反馈卡片。
     context = await decision_store.get_decision_context(decision_id)
     if context and context.status in {"valid", "invalid"}:
         decision = context.status
     else:
+        # 反馈卡片也登记到 decision_store，保持和人审卡片一致的回调恢复机制。
         await decision_store.register_pending_decision(
             DecisionContext(
                 decision_id=decision_id,
@@ -57,6 +59,7 @@ async def feedback_learning_node(
             state.get("evidence", []),
             thread_root_message_id=state.get("thread_root_message_id"),
         )
+        # 暂停等待用户判断结果是否有效，避免未经确认的诊断结果污染历史案例库。
         resume_payload = interrupt(
             {
                 "decision_id": decision_id,
@@ -67,6 +70,7 @@ async def feedback_learning_node(
         decision = str((resume_payload or {}).get("decision") or "invalid")
 
     if decision == "valid":
+        # 只有用户明确确认有效才入库，保证后续缓存复用的数据质量。
         case_id = await case_store.save_case_to_history(state)
         monitor.record_feedback(True, state.get("chat_id"))
         await sender.send_message(

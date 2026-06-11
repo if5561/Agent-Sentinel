@@ -180,6 +180,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         workflow_run_id: str | None = None,
     ) -> DiagnosisState:
         # 把不同来源的告警统一整理成诊断状态，后面的每个节点都围绕这份状态继续补充信息。
+        # trace_id 由群聊和话题根消息生成，用来串联同一条告警的日志和观测链路。
         trace_id = trace_id_from_parts(chat_id, thread_root_message_id)
         # 所有诊断入口最终都归一化成同一份 LangGraph state，后续节点只依赖这个状态契约。
         return {
@@ -196,7 +197,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "thread_root_message_id": thread_root_message_id,
             "mention_open_id": mention_open_id,
             "mention_name": mention_name,
+            # workflow_thread_id 是 LangGraph 持久化会话键，回调恢复必须使用同一个值。
             "workflow_thread_id": workflow_thread_id or str(uuid.uuid4()),
+            # workflow_run_id 标识单次运行实例，便于同一线程内区分不同触发批次。
             "workflow_run_id": workflow_run_id or str(uuid.uuid4()),
             # trace_id 用于日志和可观测性关联，不作为 Prometheus label，避免指标高基数。
             "trace_id": trace_id,
@@ -290,6 +293,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             if interactive_result.get("status") != "ignored":
                 return interactive_result
 
+        # 旧版卡片回调继续用 card_handler 解析，保持历史人审、缓存确认和反馈卡片兼容。
         context = await card_handler.parse_callback(payload)
         if context is None:
             return {"status": "ignored"}
@@ -301,10 +305,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             context.status,
         )
         if context.feedback:
+            # 拒绝原因先写入 checkpointer，恢复后的方案生成节点才能读取到人工反馈。
             await get_aiops_workflow().update_state(
                 context.workflow_thread_id,
                 {"human_feedback": context.feedback},
             )
+        # 将按钮动作作为 resume payload 送回 interrupt 暂停点，驱动 LangGraph 继续执行。
         await get_aiops_workflow().resume(
             context.workflow_thread_id,
             {"decision": context.status, "feedback": context.feedback},

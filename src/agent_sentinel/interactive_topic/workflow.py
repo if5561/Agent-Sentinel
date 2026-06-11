@@ -255,6 +255,7 @@ class InteractiveTopicWorkflow:
             logger.info("Interactive topic callback ignored invalid value task_id=%s node=%s action=%s source=%s", task_id, node_name, action, source)
             return {"status": "ignored"}
 
+        # confirm_action 会把用户动作写入任务状态，驱动对应节点走 next 或 retry 分支。
         task = self.task_store.confirm_action(task_id, node_name, action, source=source)
         if task is None:
             # 过期或重复按钮点击会被忽略，避免旧卡片状态覆盖新节点执行。
@@ -801,6 +802,7 @@ class InteractiveTopicWorkflow:
         logger.info("Interactive feedback handling start task_id=%s action=%s source=%s", task_id, action, source)
         app = self.compile()
         config = {"configurable": {"thread_id": task_id}, "recursion_limit": 50}
+        # 从 checkpointer 读取最终图状态，确保反馈入库使用的是完整诊断结果。
         snapshot = await app.aget_state(config)
         values = getattr(snapshot, "values", {}) or {}
         final_text = self._build_final_text(values)
@@ -873,6 +875,7 @@ class InteractiveTopicWorkflow:
         if self.llm is None:
             tool_plan = default_plan
         else:
+            # 优先让 LLM 基于当前证据选择工具；失败时回退默认计划，避免流程卡住。
             prompt = _build_tool_router_prompt(state, diagnosis_state, default_plan)
             try:
                 response = await self.llm.call(
@@ -895,6 +898,7 @@ class InteractiveTopicWorkflow:
                 logger.warning("Interactive tool router LLM failed task_id=%s; using default plan", state.get("task_id"), exc_info=True)
                 monitor.record_error("tool_router_llm_error")
                 tool_plan = default_plan
+        # 清洗工具计划，确保只保留白名单只读工具和可序列化参数。
         tool_plan = _sanitize_tool_plan(tool_plan)
         selected_tools = [str(item.get("tool") or "") for item in tool_plan.get("tool_calls", []) if isinstance(item, dict)]
         self._log_agent_event(
@@ -941,6 +945,7 @@ class InteractiveTopicWorkflow:
                     alert_summary=str(diagnosis_state.get("alert_summary") or state.get("query") or ""),
                     group_id=group_id,
                 )
+                # 工具原始返回可能很大，写入状态前先压缩，避免卡片和 prompt 过载。
                 live_data[_live_data_key(tool_name)] = _compact_tool_payload(payload)
             except Exception as exc:
                 status = "failed"
